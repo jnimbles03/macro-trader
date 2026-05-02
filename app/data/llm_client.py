@@ -14,6 +14,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.config import Settings
 
@@ -39,7 +45,16 @@ class GrokClient:
              max_tokens: int = 4000) -> LLMResponse:
         if self.s.mock_data or not self.s.xai_api_key:
             return _mock_grok_response(system, user)
+        return self._chat_with_retry(system, user, response_format_json, max_tokens)
 
+    @retry(
+        retry=retry_if_exception(lambda e: isinstance(e, _RetryableError)),
+        wait=wait_exponential(multiplier=2, min=2, max=20),
+        stop=stop_after_attempt(4),
+        reraise=True,
+    )
+    def _chat_with_retry(self, system: str, user: str,
+                         response_format_json: bool, max_tokens: int) -> LLMResponse:
         headers = {
             "Authorization": f"Bearer {self.s.xai_api_key}",
             "Content-Type": "application/json",
@@ -60,13 +75,24 @@ class GrokClient:
 
         with httpx.Client(timeout=120.0) as client:
             r = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
+            if 500 <= r.status_code < 600 or r.status_code == 429:
+                # Transient: retry with backoff.
+                raise _RetryableError(
+                    f"xAI {r.status_code} for model={self.model}: {r.text[:500]}"
+                )
             if r.status_code >= 400:
-                # Surface the API's actual reason — xAI puts a useful error message here.
-                raise RuntimeError(f"xAI {r.status_code} for model={self.model}: {r.text[:1000]}")
+                # Permanent: don't waste retries on 4xx (auth/model/etc).
+                raise RuntimeError(
+                    f"xAI {r.status_code} for model={self.model}: {r.text[:1000]}"
+                )
             data = r.json()
 
         text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
         return LLMResponse(text=text, model=data.get("model", self.model))
+
+
+class _RetryableError(Exception):
+    """xAI returned 5xx or 429 — try again with backoff."""
 
 
 # ---------------------------------------------------------------------------
