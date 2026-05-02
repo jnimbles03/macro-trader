@@ -19,6 +19,9 @@
     <string>ingest-all</string>
     <string>--lookback</string>
     <string>1h</string>
+    <string>--chains</string>
+    <string>--chain-roots</string>
+    <string>ZN,ES,CL,GC</string>
   </array>
 
   <key>WorkingDirectory</key>
