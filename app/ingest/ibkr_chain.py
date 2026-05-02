@@ -107,11 +107,7 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
     try:
         ib.connect(s.ibkr_host, s.ibkr_port, clientId=s.ibkr_client_id,
                    readonly=True, timeout=15)
-        # Type 3 = delayed (15min). Returns live data when the account has
-        # the subscription; falls back to delayed otherwise. Without this,
-        # accounts lacking real-time get -1 / NaN for everything.
-        ib.reqMarketDataType(3)
-        log.info("[%s] connected (market data type=delayed; live used if subscribed)", root)
+        log.info("[%s] connected", root)
 
         # Underlying future for the mark.
         log.info("[%s] resolving futures contract on exchange=%s", root, meta["exchange"])
@@ -248,6 +244,7 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
         dropped_no_greeks_no_compute = 0
         dropped_validation = 0
         computed_greeks = 0
+        used_last_or_close = 0
         now_utc = datetime.now(tz=timezone.utc)
         today = now_utc.date()
         T_years = max((expiration_d - today).days / 365.25, 1.0 / 365.25)
@@ -255,11 +252,29 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
         for contract, t in zip(option_contracts, tickers):
             bid = _safe_price(t.bid)
             ask = _safe_price(t.ask)
-            if bid is None or ask is None:
+            last = _safe_price(t.last)
+            close = _safe_price(t.close)
+
+            # Price preference: live mid > last > close. Without options data
+            # subscription bid/ask are -1 but `close` from last session may be
+            # populated and is enough to drive the Black-76 IV solver for
+            # research purposes (we are NOT executing live).
+            if bid is not None and ask is not None:
+                option_price = (bid + ask) / 2.0
+                # Use bid/ask we have; pad with mid for the legs that need them.
+                final_bid, final_ask = bid, ask
+            elif last is not None:
+                option_price = last
+                final_bid, final_ask = last, last
+                used_last_or_close += 1
+            elif close is not None:
+                option_price = close
+                final_bid, final_ask = close, close
+                used_last_or_close += 1
+            else:
                 dropped_no_quote += 1
                 continue
-            last = _safe_price(t.last)
-            mid = (bid + ask) / 2.0
+
             ot = OptionType(contract.right)
 
             greeks = t.modelGreeks
@@ -270,11 +285,11 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                 theta = float(greeks.theta)
                 vega = float(greeks.vega)
             else:
-                # Compute Greeks ourselves via Black-76 from the mid price.
+                # Compute Greeks ourselves via Black-76 from the chosen price.
                 try:
                     iv = implied_vol(
                         F=float(underlying_price), K=float(contract.strike),
-                        market_price=mid, T=T_years, r=0.05, option_type=ot,
+                        market_price=option_price, T=T_years, r=0.05, option_type=ot,
                     )
                     b76 = black76(
                         F=float(underlying_price), K=float(contract.strike),
@@ -286,8 +301,8 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                     vega = b76.vega / 100.0     # per 1% point of vol
                     computed_greeks += 1
                 except Exception as e:
-                    log.debug("[%s] Black-76 compute failed for %s%s mid=%s: %s",
-                              root, contract.strike, contract.right, mid, e)
+                    log.debug("[%s] Black-76 compute failed for %s%s price=%s: %s",
+                              root, contract.strike, contract.right, option_price, e)
                     dropped_no_greeks_no_compute += 1
                     continue
 
@@ -300,7 +315,7 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                     strike=float(contract.strike),
                     expiration=expiration_d,
                     multiplier=meta["multiplier"],
-                    bid=bid, ask=ask, last=last,
+                    bid=final_bid, ask=final_ask, last=last,
                     iv=iv, delta=delta, gamma=gamma, theta=theta, vega=vega,
                     volume=int(t.volume) if t.volume else 0,
                     open_interest=0,  # IBKR exposes OI on a separate tick type; v1 leaves at 0
@@ -312,9 +327,9 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                           root, contract.strike, contract.right, e)
                 continue
 
-        log.info("[%s] kept %d contracts | computed_greeks=%d | "
+        log.info("[%s] kept %d contracts | computed_greeks=%d used_last_or_close=%d | "
                  "dropped: no_quote=%d compute_failed=%d validation=%d",
-                 root, len(contracts), computed_greeks,
+                 root, len(contracts), computed_greeks, used_last_or_close,
                  dropped_no_quote, dropped_no_greeks_no_compute, dropped_validation)
 
         if not contracts:
