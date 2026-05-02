@@ -42,6 +42,25 @@ def _greeks_complete(g: Any) -> bool:
             return False
     return True
 
+
+def _wait_for_ticker_price(ib, ticker, timeout: float = 10.0) -> None:
+    """Block up to `timeout` seconds until the ticker has any usable price.
+
+    The IBKR usfuture market data farm often isn't connected the instant
+    reqMktData is issued, so a fixed ib.sleep(2) reads the ticker before
+    any tick arrives. Polls in 0.5s steps until a usable price field
+    populates or timeout elapses.
+    """
+    import time as _time
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        ib.sleep(0.5)
+        for v in (ticker.marketPrice(), ticker.last, ticker.close,
+                  ticker.bid, ticker.ask):
+            if _safe_price(v) is not None:
+                return
+    return
+
 log = logging.getLogger(__name__)
 
 
@@ -129,7 +148,7 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
         ib.qualifyContracts(future_contract)
         log.info("[%s] requesting market data for underlying", root)
         ticker = ib.reqMktData(future_contract, "", snapshot=True)
-        ib.sleep(2.0)
+        _wait_for_ticker_price(ib, ticker, timeout=10.0)
         # NaN-safe: market data farms return NaN/-1 for unsubscribed feeds.
         underlying_price = (
             _safe_price(ticker.marketPrice())
@@ -237,7 +256,11 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                  root, len(option_contracts))
         tickers = [ib.reqMktData(c, "106", snapshot=False, regulatorySnapshot=False)
                    for c in option_contracts]
-        ib.sleep(3.0)
+        # Wait for at least one ticker to populate (proxy for "snapshots are
+        # arriving"), then a final settle window for the rest.
+        if tickers:
+            _wait_for_ticker_price(ib, tickers[0], timeout=10.0)
+        ib.sleep(2.0)
 
         contracts: list[OptionContract] = []
         dropped_no_quote = 0
