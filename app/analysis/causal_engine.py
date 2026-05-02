@@ -67,9 +67,14 @@ You return JSON ONLY (no prose) with this shape:
 Rules:
 - Never fabricate prices/Greeks/strikes — only reference values present in the
   provided chain snapshot.
-- If the regime is "no_signal" or the clusters are weak/conflicted, return an
-  empty candidate_trades array rather than manufacturing a thesis.
-- Defined-risk spread MUST have max_gain/max_loss ≥ 2.0 at expiration.
+- If the regime is "no_signal", return an empty candidate_trades array.
+- If the regime is "conflicted" but >=3 personas in the convergence list agree
+  on a thesis direction (and total cluster weight isn't tiny), you MAY still
+  propose ONE trade — pick the cleanest expression (spread OR yolo, not both)
+  and explain in why_probably_dumb why this is lower conviction than usual.
+- Otherwise (weak total weight, no convergence, no clean expression), return
+  empty rather than manufacturing a thesis.
+- Defined-risk spread MUST have max_gain/max_loss >= 2.0 at expiration.
 - YOLO MUST be a single long option (no naked shorts; no debit spreads).
 - Naked short options are never permitted in either slot.
 """
@@ -102,6 +107,8 @@ def run_causal_engine(regime: RegimeAssessment,
         "regime_confidence": regime.confidence,
         "regime_explanation": regime.explanation,
         "persona_weights": regime.persona_weights,
+        "persona_convergence": regime.convergence,
+        "persona_dissent": regime.dissent,
         "clusters": [
             {
                 "name": c.name,
