@@ -136,33 +136,62 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
         # for security type FUT' from IBKR.
         log.info("[%s] requesting option chain params (secdef, exchange=%s)",
                  root, meta["exchange"])
-        params = ib.reqSecDefOptParams(
+        all_params = ib.reqSecDefOptParams(
             future_contract.symbol, meta["exchange"], "FUT", future_contract.conId
         )
-        if not params:
+        if not all_params:
             log.warning("[%s] no option params returned (no options on this future, "
                         "or wrong sec type)", root)
             return None
-        log.info("[%s] got %d secdef param entries", root, len(params))
+        log.info("[%s] got %d secdef param entries (trading classes: %s)",
+                 root, len(all_params),
+                 sorted({p.tradingClass for p in all_params}))
+
+        # Filter to entries matching our target trading class — otherwise we
+        # pull weekly expirations (Monday/Wednesday/Friday weeklies have
+        # different trading classes) and qualifyContracts fails with
+        # 'No security definition' because we keep meta["trading_class"] fixed.
+        params = [p for p in all_params if p.tradingClass == meta["trading_class"]]
+        if not params:
+            log.warning("[%s] no secdef params matched tradingClass=%s; "
+                        "available: %s",
+                        root, meta["trading_class"],
+                        sorted({p.tradingClass for p in all_params}))
+            return None
+        log.info("[%s] %d param entries match tradingClass=%s",
+                 root, len(params), meta["trading_class"])
 
         if expiration is not None:
             expiry_yyyymmdd = expiration.replace("-", "")
             log.info("[%s] using requested expiration %s", root, expiry_yyyymmdd)
         else:
+            today_str = datetime.now(tz=timezone.utc).strftime("%Y%m%d")
+            # Prefer expirations >=7 days out so we don't end up with 0DTE / 2DTE
+            # unless the operator explicitly wants them.
+            min_str = (datetime.now(tz=timezone.utc).date()
+                       .replace(day=1)).isoformat()  # placeholder, set below
+            from datetime import timedelta as _td
+            min_dt = (datetime.now(tz=timezone.utc).date() + _td(days=7))
+            min_str = min_dt.strftime("%Y%m%d")
             all_expiries = sorted({e for p in params for e in p.expirations})
-            if not all_expiries:
-                log.warning("[%s] no expirations in secdef params", root)
+            future_expiries = [e for e in all_expiries if e >= min_str]
+            if not future_expiries:
+                # Fall back to any future expiration if 7-day floor leaves nothing.
+                future_expiries = [e for e in all_expiries if e >= today_str]
+            if not future_expiries:
+                log.warning("[%s] no expirations >= today in secdef params", root)
                 return None
-            expiry_yyyymmdd = all_expiries[0]
-            log.info("[%s] auto-selected front expiration %s (out of %d available)",
-                     root, expiry_yyyymmdd, len(all_expiries))
+            expiry_yyyymmdd = future_expiries[0]
+            log.info("[%s] auto-selected expiration %s (>=7d out, %d available)",
+                     root, expiry_yyyymmdd, len(future_expiries))
         expiration_d = date(int(expiry_yyyymmdd[:4]),
                              int(expiry_yyyymmdd[4:6]),
                              int(expiry_yyyymmdd[6:8]))
 
         if strikes is None:
             all_strikes = sorted({k for p in params for k in p.strikes})
-            log.info("[%s] %d strikes available across all params", root, len(all_strikes))
+            log.info("[%s] %d strikes available in tradingClass=%s",
+                     root, len(all_strikes), meta["trading_class"])
             atm = min(all_strikes, key=lambda k: abs(k - underlying_price))
             atm_idx = all_strikes.index(atm)
             half = num_strikes // 2
