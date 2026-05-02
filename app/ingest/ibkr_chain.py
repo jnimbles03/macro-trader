@@ -74,60 +74,84 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                  strikes: list[float] | None, num_strikes: int) -> OptionChain | None:
     from ib_async import IB, Future, FuturesOption
 
+    log.info("[%s] connecting to IB Gateway %s:%d (clientId=%d)",
+             root, s.ibkr_host, s.ibkr_port, s.ibkr_client_id)
     ib = IB()
     try:
         ib.connect(s.ibkr_host, s.ibkr_port, clientId=s.ibkr_client_id,
                    readonly=True, timeout=15)
+        log.info("[%s] connected", root)
 
         # Underlying future for the mark.
+        log.info("[%s] resolving futures contract on exchange=%s", root, meta["exchange"])
         underlying = Future(symbol=root, exchange=meta["exchange"], includeExpired=False)
         details = ib.reqContractDetails(underlying)
         if not details:
-            log.warning("no IBKR future details for %s", root)
+            log.warning("[%s] no IBKR future details — check market data subscription for %s",
+                        root, meta["exchange"])
             return None
+        log.info("[%s] got %d futures contract(s)", root, len(details))
 
         future_contract = sorted(
             details, key=lambda d: d.contract.lastTradeDateOrContractMonth
         )[0].contract
+        log.info("[%s] front-month future: %s expiry=%s conId=%d",
+                 root, future_contract.localSymbol or future_contract.symbol,
+                 future_contract.lastTradeDateOrContractMonth, future_contract.conId)
+
         ib.qualifyContracts(future_contract)
+        log.info("[%s] requesting market data for underlying", root)
         ticker = ib.reqMktData(future_contract, "", snapshot=True)
         ib.sleep(2.0)
         underlying_price = ticker.marketPrice()
         if underlying_price is None or underlying_price != underlying_price:
             underlying_price = ticker.last or ticker.close
+        log.info("[%s] underlying mark: %s (last=%s close=%s bid=%s ask=%s)",
+                 root, underlying_price, ticker.last, ticker.close, ticker.bid, ticker.ask)
         if not underlying_price:
-            log.warning("no underlying mark for %s", root)
+            log.warning("[%s] no underlying mark — likely missing real-time market data subscription",
+                        root)
             return None
         underlying_symbol = future_contract.localSymbol or f"{root}{future_contract.lastTradeDateOrContractMonth}"
 
         # Resolve expiration via secdef params.
+        log.info("[%s] requesting option chain params (secdef)", root)
         params = ib.reqSecDefOptParams(
             future_contract.symbol, "", "FUT", future_contract.conId
         )
         if not params:
-            log.warning("no option params for %s", root)
+            log.warning("[%s] no option params returned (no options on this future, "
+                        "or wrong sec type)", root)
             return None
+        log.info("[%s] got %d secdef param entries", root, len(params))
 
         if expiration is not None:
             expiry_yyyymmdd = expiration.replace("-", "")
+            log.info("[%s] using requested expiration %s", root, expiry_yyyymmdd)
         else:
             all_expiries = sorted({e for p in params for e in p.expirations})
             if not all_expiries:
-                log.warning("no expirations for %s", root)
+                log.warning("[%s] no expirations in secdef params", root)
                 return None
             expiry_yyyymmdd = all_expiries[0]
+            log.info("[%s] auto-selected front expiration %s (out of %d available)",
+                     root, expiry_yyyymmdd, len(all_expiries))
         expiration_d = date(int(expiry_yyyymmdd[:4]),
                              int(expiry_yyyymmdd[4:6]),
                              int(expiry_yyyymmdd[6:8]))
 
         if strikes is None:
             all_strikes = sorted({k for p in params for k in p.strikes})
+            log.info("[%s] %d strikes available across all params", root, len(all_strikes))
             atm = min(all_strikes, key=lambda k: abs(k - underlying_price))
             atm_idx = all_strikes.index(atm)
             half = num_strikes // 2
             chosen = all_strikes[max(0, atm_idx - half): atm_idx + half + 1]
+            log.info("[%s] picked %d strikes around ATM=%s: %s",
+                     root, len(chosen), atm, chosen)
         else:
             chosen = sorted(set(strikes))
+            log.info("[%s] using %d caller-supplied strikes: %s", root, len(chosen), chosen)
 
         option_contracts: list[Any] = []
         for k in chosen:
@@ -141,22 +165,33 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                     tradingClass=meta["trading_class"],
                 )
                 option_contracts.append(opt)
+        log.info("[%s] qualifying %d option contracts (%d strikes × C+P)...",
+                 root, len(option_contracts), len(chosen))
         ib.qualifyContracts(*option_contracts)
+        qualified_count = sum(1 for c in option_contracts if getattr(c, "conId", 0))
+        log.info("[%s] %d/%d contracts qualified", root, qualified_count, len(option_contracts))
 
+        log.info("[%s] requesting market data for %d option contracts (genericTickList=106)...",
+                 root, len(option_contracts))
         tickers = [ib.reqMktData(c, "106", snapshot=False, regulatorySnapshot=False)
                    for c in option_contracts]
         ib.sleep(3.0)
 
         contracts: list[OptionContract] = []
+        dropped_no_greeks = 0
+        dropped_no_quote = 0
+        dropped_validation = 0
         now_utc = datetime.now(tz=timezone.utc)
         for contract, t in zip(option_contracts, tickers):
             greeks = t.modelGreeks
             if greeks is None or any(getattr(greeks, k, None) is None
                                      for k in ("impliedVol", "delta", "gamma", "theta", "vega")):
+                dropped_no_greeks += 1
                 continue
             bid = t.bid if t.bid is not None and t.bid > 0 else None
             ask = t.ask if t.ask is not None and t.ask > 0 else None
             if bid is None or ask is None:
+                dropped_no_quote += 1
                 continue
             try:
                 contracts.append(OptionContract(
@@ -179,12 +214,17 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                     quote_time=now_utc,
                 ))
             except Exception as e:
-                log.debug("dropping IBKR contract %s %s: %s",
-                          contract.strike, contract.right, e)
+                dropped_validation += 1
+                log.debug("[%s] dropped %s%s: %s",
+                          root, contract.strike, contract.right, e)
                 continue
 
+        log.info("[%s] kept %d contracts | dropped: no_greeks=%d no_quote=%d validation=%d",
+                 root, len(contracts), dropped_no_greeks, dropped_no_quote, dropped_validation)
+
         if not contracts:
-            log.warning("IBKR returned no usable contracts for %s", root)
+            log.warning("[%s] IBKR returned no usable contracts — likely missing OPRA/CME "
+                        "real-time market data subscription, or market closed.", root)
             return None
 
         return OptionChain(
@@ -199,5 +239,6 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
     finally:
         try:
             ib.disconnect()
+            log.info("[%s] disconnected", root)
         except Exception:
             pass

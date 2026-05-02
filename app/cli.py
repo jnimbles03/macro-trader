@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sys
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -13,6 +15,20 @@ from rich.markdown import Markdown
 from rich.table import Table
 
 from app.config import SUPPORTED_ROOTS, get_settings
+
+
+def _configure_logging(verbose: bool = False) -> None:
+    """Surface INFO+ logs to stderr. Bumped to DEBUG by --verbose / MACRO_VERBOSE=1."""
+    if logging.getLogger().handlers:
+        return
+    if not verbose:
+        verbose = os.environ.get("MACRO_VERBOSE", "").lower() in ("1", "true", "yes")
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
 from app.data.cache import reset_cache
 from app.data.news_ingest import fetch_recent_headlines
 from app.reports.markdown_renderer import render_brief
@@ -27,6 +43,14 @@ from app.storage.repository import (
 
 app = typer.Typer(help="Macro Options Scout — research-only options trade ideas.", no_args_is_help=True)
 console = Console()
+
+
+@app.callback()
+def _global_options(
+    verbose: bool = typer.Option(False, "--verbose", "-v",
+                                  help="Enable DEBUG-level logging (alias: MACRO_VERBOSE=1)"),
+):
+    _configure_logging(verbose=verbose)
 
 
 # --------------------------------------------------------------------------
