@@ -60,7 +60,9 @@ class GrokClient:
 
         with httpx.Client(timeout=120.0) as client:
             r = client.post(f"{self.base_url}/chat/completions", headers=headers, json=body)
-            r.raise_for_status()
+            if r.status_code >= 400:
+                # Surface the API's actual reason — xAI puts a useful error message here.
+                raise RuntimeError(f"xAI {r.status_code} for model={self.model}: {r.text[:1000]}")
             data = r.json()
 
         text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
