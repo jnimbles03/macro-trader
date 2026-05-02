@@ -25,23 +25,41 @@ from app.models.headline import (
 # Channel keyword map
 # ---------------------------------------------------------------------------
 CHANNEL_KEYWORDS: dict[str, list[str]] = {
-    "monetary_policy": ["fomc", "fed", "rate cut", "rate hike", "qt", "qe", "dot plot"],
-    "fiscal": ["deficit", "budget", "spending bill", "appropriations", "stimulus"],
-    "treasury_issuance": ["refunding", "auction size", "coupon supply", "bill issuance", "treasury issuance"],
-    "inflation": ["cpi", "pce", "ppi", "core inflation", "wage growth", "inflation"],
-    "labor_growth": ["payroll", "unemployment", "ism", "pmi", "gdp", "jolts", "claims", "ip", "industrial production"],
-    "central_bank_communication": ["lagarde", "powell", "bailey", "ueda", "kuroda", "speech", "press conference"],
-    "credit_stress": ["spreads widen", "default", "downgrade", "credit", "loan loss", "cre"],
-    "banking_liquidity": ["deposit", "h.8", "bank stress", "liquidity", "rrp", "tga", "btfp"],
+    "monetary_policy": [
+        "fomc", "fed ", "federal reserve", "rate cut", "rate hike", "qt", "qe", "dot plot",
+        "rate decision", "monetary policy", "interest rate", "fed funds",
+    ],
+    "fiscal": ["deficit", "budget", "spending bill", "appropriations", "stimulus", "debt ceiling"],
+    "treasury_issuance": [
+        "refunding", "auction size", "coupon supply", "bill issuance", "treasury issuance",
+        "treasury auction", "treasury bill", "treasury note", "treasury bond",
+    ],
+    "inflation": ["cpi", "pce", "ppi", "core inflation", "wage growth", "inflation", "disinflation", "deflation"],
+    "labor_growth": [
+        "payroll", "unemployment", "ism", "pmi", "gdp", "jolts", "jobless claims",
+        "industrial production", "nonfarm", "jobs report", "recession",
+    ],
+    "central_bank_communication": [
+        "lagarde", "powell", "bailey", "ueda", "kuroda", "fed chair", "press conference",
+        "fed speech", "ecb speech",
+    ],
+    "credit_stress": [
+        "spreads widen", "default", "downgrade", "credit spread", "high yield", "junk bond",
+        "investment grade", "loan loss", "cre ", "commercial real estate",
+    ],
+    "banking_liquidity": ["bank deposit", "h.8", "bank stress", "liquidity", "rrp", "tga", "btfp", "repo "],
     "geopolitical_risk": ["war", "missile", "strike", "attack", "houthi", "red sea", "ukraine", "taiwan"],
-    "energy_commodities": ["opec", "crude", "oil", "natural gas", "lng", "gold", "copper", "wti", "brent"],
-    "china": ["china", "pboc", "yuan", "cny", "shanghai", "evergrande"],
-    "europe": ["ecb", "euro area", "eurozone", "bundesbank"],
-    "japan": ["boj", "yen", "jpy", "tokyo"],
-    "elections_regulation": ["election", "regulation", "antitrust", "doj", "ftc"],
+    "energy_commodities": [
+        "opec", "crude", "oil price", "natural gas", "lng", "gold price", "copper", "wti", "brent",
+        "petroleum", "gasoline",
+    ],
+    "china": ["china ", "pboc", "yuan", "cny", "shanghai", "evergrande", "chinese economy"],
+    "europe": ["ecb", "euro area", "eurozone", "bundesbank", "european central bank"],
+    "japan": ["boj", "bank of japan", "yen", "jpy", "tokyo"],
+    "elections_regulation": ["election", "regulation", "antitrust", "doj ", "ftc "],
     "tariffs_sanctions": ["tariff", "sanctions", "export control", "blacklist"],
-    "market_plumbing_volatility": ["vix", "vol", "move index", "skew", "convexity", "gamma"],
-    "positioning": ["positioning", "net length", "cot report", "hedge fund", "speculator"],
+    "market_plumbing_volatility": ["vix", "move index", "implied vol", "skew", "convexity", "gamma exposure"],
+    "positioning": ["net length", "cot report", "hedge fund", "speculator", "positioning extreme"],
 }
 
 # ---------------------------------------------------------------------------

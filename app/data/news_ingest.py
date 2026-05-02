@@ -46,13 +46,58 @@ def _load(s, lookback_hours: int) -> list[Headline]:
     if s.mock_data:
         return _load_fixture()
     cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)
+    counts: dict[str, int] = {}
     out: list[Headline] = []
     if s.gdelt_enabled:
-        out.extend(_fetch_gdelt(lookback_hours))
+        gd = _fetch_gdelt(lookback_hours)
+        counts["gdelt"] = len(gd)
+        out.extend(gd)
     if s.newsapi_key:
-        out.extend(_fetch_newsapi(s.newsapi_key, lookback_hours))
-    out.extend(_fetch_rss(lookback_hours))
-    return [h for h in out if h.published_at >= cutoff]
+        na = _fetch_newsapi(s.newsapi_key, lookback_hours)
+        counts["newsapi"] = len(na)
+        out.extend(na)
+    rss = _fetch_rss(lookback_hours)
+    counts["rss"] = len(rss)
+    out.extend(rss)
+    out = [h for h in out if h.published_at >= cutoff]
+    before = len(out)
+    out = [h for h in out if _is_macro_relevant(h.title, h.summary)]
+    log.info("news ingest: raw counts=%s | post-relevance: %d->%d", counts, before, len(out))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Macro relevance gate. Hard keyword filter applied to every fetched headline
+# before clustering — kills the noise from GDELT/NewsAPI fan-out.
+# ---------------------------------------------------------------------------
+_MACRO_KEYWORDS = (
+    # rates / monetary
+    "fed", "fomc", "powell", "central bank", "interest rate", "rate cut", "rate hike",
+    "monetary policy", "qt", "qe", "dot plot", "rate decision",
+    # inflation
+    "cpi", "ppi", "pce", "inflation", "disinflation", "deflation", "wage growth",
+    # treasury / fiscal
+    "treasury", "refunding", "auction", "coupon", "bill issuance", "deficit", "debt ceiling",
+    # labor / growth
+    "payroll", "unemployment", "jobless", "claims", "ism", "pmi", "gdp", "jolts", "nonfarm",
+    # cb / international
+    "ecb", "lagarde", "boj", "ueda", "boe", "bailey", "pboc", "yuan", "yen", "euro area", "eurozone",
+    # credit / banking
+    "credit spread", "high yield", "junk bond", "bank stress", "bank deposit", "h.8", "rrp", "tga", "btfp",
+    # commodities / vol
+    "opec", "crude", "wti", "brent", "natural gas", "lng", "gold", "silver", "copper",
+    "vix", "move index", "implied vol", "convexity",
+    # geopolitics with macro spillover
+    "tariff", "sanctions", "export control", "houthi", "red sea", "ukraine", "taiwan", "russia oil",
+    # markets / positioning
+    "yield", "curve", "dxy", "dollar index", "futures", "hedge fund", "positioning",
+    "options flow", "term premium", "real yield",
+)
+
+
+def _is_macro_relevant(title: str, summary: str | None) -> bool:
+    text = f"{title} {summary or ''}".lower()
+    return any(kw in text for kw in _MACRO_KEYWORDS)
 
 
 # ---------------------------------------------------------------------------
@@ -70,12 +115,25 @@ def _load_fixture() -> list[Headline]:
 # Docs: https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/
 # ---------------------------------------------------------------------------
 def _fetch_gdelt(lookback_hours: int) -> list[Headline]:
+    # Theme-based filter is far more precise than free-text. Combined with a
+    # domain allow-list of macro-grade sources, this kills the local-newspaper
+    # noise that the previous query was pulling in.
+    domains = (
+        "domain:reuters.com OR domain:apnews.com OR domain:ft.com OR domain:wsj.com "
+        "OR domain:bloomberg.com OR domain:cnbc.com OR domain:marketwatch.com "
+        "OR domain:economist.com OR domain:nikkei.com OR domain:politico.com"
+    )
+    themes = (
+        "theme:ECON_INTEREST_RATES OR theme:ECON_INFLATION OR theme:ECON_CENTRAL_BANK "
+        "OR theme:ECON_DEBT OR theme:ECON_TRADE_DEAL OR theme:ECON_BANK_DEBT "
+        "OR theme:ECON_BANKRUPTCY OR theme:ECON_STIMULUS OR theme:ECON_MONOPOLY"
+    )
     url = "https://api.gdeltproject.org/api/v2/doc/doc"
     params = {
-        "query": '(Federal Reserve OR Treasury OR PCE OR CPI OR ECB OR BOJ OR PBOC OR OPEC OR refunding) sourcelang:eng',
+        "query": f"({domains}) AND ({themes}) sourcelang:eng",
         "mode": "ArtList",
         "format": "json",
-        "maxrecords": 75,
+        "maxrecords": 50,
         "timespan": f"{lookback_hours}h",
         "sort": "datedesc",
     }
@@ -111,13 +169,21 @@ def _fetch_gdelt(lookback_hours: int) -> list[Headline]:
 # ---------------------------------------------------------------------------
 def _fetch_newsapi(key: str, lookback_hours: int) -> list[Headline]:
     cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Phrase-quoted OR + domain allow-list. NewsAPI tokenises unquoted text, so
+    # `Federal Reserve` was matching anything with "federal" or "reserve" — junk.
+    q = (
+        '"Federal Reserve" OR "FOMC" OR "ECB" OR "Bank of Japan" OR '
+        '"core PCE" OR "CPI" OR "Treasury refunding" OR "OPEC" OR '
+        '"yield curve" OR "10-year yield" OR "rate cut" OR "rate hike"'
+    )
     url = "https://newsapi.org/v2/everything"
     params = {
-        "q": "Federal Reserve OR ECB OR BOJ OR Treasury OR refunding OR OPEC",
+        "q": q,
         "from": cutoff,
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": 50,
+        "domains": "reuters.com,apnews.com,ft.com,wsj.com,bloomberg.com,cnbc.com,marketwatch.com,economist.com,nikkei.com",
     }
     headers = {"X-Api-Key": key}
     try:
