@@ -55,8 +55,14 @@ def _check_root(root: str) -> None:
 def _check_chain(chain: OptionChain | None) -> None:
     if chain is None:
         raise RiskRejection(NoTradeReason.MISSING_CHAIN_DATA, "no chain available")
-    if chain.is_stale:
-        raise RiskRejection(NoTradeReason.STALE_QUOTES, "chain quote_time > 5 min old")
+    s = get_settings()
+    max_age_s = s.max_chain_staleness_min * 60
+    age_s = chain.age_seconds()
+    if age_s is not None and age_s > max_age_s:
+        raise RiskRejection(
+            NoTradeReason.STALE_QUOTES,
+            f"chain age {age_s/60:.1f} min > {s.max_chain_staleness_min} min limit",
+        )
     if not chain.contracts:
         raise RiskRejection(NoTradeReason.MISSING_CHAIN_DATA, "chain has no contracts")
 

@@ -92,10 +92,18 @@ class OptionChain(BaseModel):
 
     @property
     def is_stale(self) -> bool:
-        # 5-minute staleness window for chains. Compare in UTC, naive-or-aware safe.
+        # Legacy 5-min check, retained for tests. Live code path uses
+        # `age_seconds()` against `Settings.max_chain_staleness_min`.
         from datetime import timezone
         now = datetime.now(timezone.utc) if self.quote_time.tzinfo else datetime.utcnow()
         return (now - self.quote_time).total_seconds() > 300
+
+    def age_seconds(self) -> float | None:
+        from datetime import timezone
+        if self.quote_time is None:
+            return None
+        now = datetime.now(timezone.utc) if self.quote_time.tzinfo else datetime.utcnow()
+        return (now - self.quote_time).total_seconds()
 
     def find(self, strike: float, option_type: OptionType) -> OptionContract | None:
         for c in self.contracts:

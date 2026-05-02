@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     cache_regime_min: int = 60
     cache_chain_min: int = 5
 
+    # --- Quote freshness ---
+    # Warehouse pattern: ingest runs on a schedule, the warehouse IS the
+    # source of truth. This gate only catches operational failure (ingest
+    # stopped). Default 24h is permissive; freshness should be monitored
+    # via `macro-scout data-status`, not enforced per-poke.
+    # Drop to ~5 if you have real-time options data + want strict staleness.
+    max_chain_staleness_min: int = 1440
+
     # --- Storage ---
     db_path: str = "./data/macro_scout.db"
 

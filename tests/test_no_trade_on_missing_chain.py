@@ -42,7 +42,9 @@ def test_missing_chain_rejected():
 
 
 def test_stale_chain_rejected():
-    qt = datetime.utcnow() - timedelta(minutes=15)        # > 5 min stale window
+    # Default freshness gate is 24h — fires only on operational failure
+    # (ingest stopped). Use a 30h-old chain to confirm the gate still works.
+    qt = datetime.utcnow() - timedelta(hours=30)
     chain = OptionChain(root="ZN", underlying_symbol="ZNM6", underlying_price=110.0,
                         expiration=date(2026, 5, 23), quote_time=qt, multiplier=1000.0,
                         contracts=[OptionContract(
