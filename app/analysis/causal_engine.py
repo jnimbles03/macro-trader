@@ -65,8 +65,20 @@ You return JSON ONLY (no prose) with this shape:
 }
 
 Rules:
-- Never fabricate prices/Greeks/strikes — only reference values present in the
-  provided chain snapshot.
+- Workflow: you PROPOSE the trade structure (root, expiration, strike, action,
+  option_type). The pipeline then fetches the live chain and hydrates real
+  prices, IV, and Greeks. So:
+    * `strike`: pick a reasonable level (ATM-ish for spread legs; the OTM tail
+      you want for YOLO). The chain will validate; if your strike isn't listed
+      the slot becomes NO TRADE.
+    * `premium`: placeholder only — set to your best guess. The pipeline will
+      replace it with the real chain mid before any risk math runs.
+    * Do NOT include iv / delta / gamma / theta / vega in your legs — those
+      come from the chain.
+  An empty `chain_snapshots` array in the input is normal; it does NOT mean
+  "no chain available," it means "the chain hasn't been fetched yet — propose
+  the structure anyway."
+- Never fabricate headlines or sources. Cite only items in the supplied corpus.
 - If the regime is "no_signal", return an empty candidate_trades array.
 - If the regime is "conflicted" but >=3 personas in the convergence list agree
   on a thesis direction (and total cluster weight isn't tiny), you MAY still
