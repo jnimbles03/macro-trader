@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -61,29 +62,33 @@ def _load(s, lookback_hours: int) -> list[Headline]:
     out.extend(rss)
     out = [h for h in out if h.published_at >= cutoff]
     before = len(out)
-    out = [h for h in out if _is_macro_relevant(h.title, h.summary)]
-    log.info("news ingest: raw counts=%s | post-relevance: %d->%d", counts, before, len(out))
+    out = [h for h in out if _passes_relevance(h)]
+    print(f"news ingest: raw={counts} | post-relevance: {before}->{len(out)}", file=sys.stderr)
     return out
 
 
 # ---------------------------------------------------------------------------
-# Macro relevance gate. Hard keyword filter applied to every fetched headline
-# before clustering — kills the noise from GDELT/NewsAPI fan-out.
+# Macro relevance gate. Tier 1/2 sources bypass — central banks, Treasury,
+# BLS/BEA/EIA, Reuters/AP wire, FT/WSJ/Bloomberg are macro by definition.
+# Tier 3/4 must contain at least one term from the macro vocabulary to survive.
 # ---------------------------------------------------------------------------
 _MACRO_KEYWORDS = (
     # rates / monetary
     "fed", "fomc", "powell", "central bank", "interest rate", "rate cut", "rate hike",
-    "monetary policy", "qt", "qe", "dot plot", "rate decision",
+    "monetary policy", "qt", "qe", "dot plot", "rate decision", "fed funds",
     # inflation
-    "cpi", "ppi", "pce", "inflation", "disinflation", "deflation", "wage growth",
+    "cpi", "ppi", "pce", "inflation", "disinflation", "deflation", "wage growth", "core inflation",
     # treasury / fiscal
     "treasury", "refunding", "auction", "coupon", "bill issuance", "deficit", "debt ceiling",
+    "fiscal", "budget",
     # labor / growth
     "payroll", "unemployment", "jobless", "claims", "ism", "pmi", "gdp", "jolts", "nonfarm",
+    "labor market", "jobs report",
     # cb / international
     "ecb", "lagarde", "boj", "ueda", "boe", "bailey", "pboc", "yuan", "yen", "euro area", "eurozone",
     # credit / banking
-    "credit spread", "high yield", "junk bond", "bank stress", "bank deposit", "h.8", "rrp", "tga", "btfp",
+    "credit spread", "high yield", "junk bond", "bank stress", "bank deposit", "h.8", "rrp", "tga",
+    "btfp", "regulator", "loan-to-deposit", "supervisory",
     # commodities / vol
     "opec", "crude", "wti", "brent", "natural gas", "lng", "gold", "silver", "copper",
     "vix", "move index", "implied vol", "convexity",
@@ -91,12 +96,14 @@ _MACRO_KEYWORDS = (
     "tariff", "sanctions", "export control", "houthi", "red sea", "ukraine", "taiwan", "russia oil",
     # markets / positioning
     "yield", "curve", "dxy", "dollar index", "futures", "hedge fund", "positioning",
-    "options flow", "term premium", "real yield",
+    "options flow", "term premium", "real yield", "bond market", "stock market",
 )
 
 
-def _is_macro_relevant(title: str, summary: str | None) -> bool:
-    text = f"{title} {summary or ''}".lower()
+def _passes_relevance(h: Headline) -> bool:
+    if h.tier in (CredibilityTier.TIER_1, CredibilityTier.TIER_2):
+        return True
+    text = f"{h.title} {h.summary or ''}".lower()
     return any(kw in text for kw in _MACRO_KEYWORDS)
 
 
@@ -140,7 +147,13 @@ def _fetch_gdelt(lookback_hours: int) -> list[Headline]:
     try:
         with httpx.Client(timeout=20.0) as c:
             r = c.get(url, params=params)
+            if r.status_code == 429:
+                log.warning("GDELT rate-limited (429); skipping this run")
+                return []
             r.raise_for_status()
+            if not r.text or not r.text.strip().startswith("{"):
+                log.warning("GDELT returned non-JSON body (likely throttle page); skipping")
+                return []
             data = r.json()
     except Exception as e:
         log.warning("GDELT fetch failed: %s", e)
