@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -91,6 +91,15 @@ class Settings(BaseSettings):
 
     # --- Risk profile selection (overridable per poke) ---
     default_risk_profile: Literal["conservative", "balanced", "aggressive", "yolo"] = "balanced"
+
+    # Empty strings in .env (e.g. DEFAULT_ACCOUNT_SIZE=) must coerce to None
+    # for `float | None` fields — pydantic-settings won't do this on its own.
+    @field_validator("default_account_size", mode="before")
+    @classmethod
+    def _blank_to_none(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
 
     # ---------- helpers ----------
     @property
