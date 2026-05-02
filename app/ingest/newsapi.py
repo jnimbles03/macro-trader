@@ -44,10 +44,12 @@ def ingest(*, lookback_hours: int = 24,
 
 def _fetch(key: str, since: datetime, until: datetime) -> list[dict]:
     url = "https://newsapi.org/v2/everything"
+    # NOTE: free Developer tier has a ~24h article delay — passing `from`/`to`
+    # restricted to the last 24h returns 0 results. We let NewsAPI default the
+    # window (broadest the plan allows) and grab the 100 most recent articles;
+    # the orchestrator filters by `published_at >= since` downstream.
     params = {
         "q": _QUERY,
-        "from": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "to": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": 100,
