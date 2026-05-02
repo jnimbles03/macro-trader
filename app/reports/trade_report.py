@@ -41,18 +41,19 @@ def generate_trade_brief(*,
                          lookback_hours: int = 24,
                          market_filter: str | None = None,
                          risk_profile: str | None = None,
-                         fresh: bool = False) -> TradeBrief:
+                         fresh: bool = False,
+                         live: bool = False) -> TradeBrief:
     s = get_settings()
 
     # 1-2. headlines + dedupe
-    raw = fetch_recent_headlines(lookback_hours=lookback_hours, fresh=fresh)
+    raw = fetch_recent_headlines(lookback_hours=lookback_hours, fresh=fresh, live=live)
     headlines = dedupe(raw)
 
     # 3. cluster + score
     clusters = score_clusters(cluster_by_channel(headlines))
 
     # macro tape
-    tape = get_market_tape()
+    tape = get_market_tape(fresh=fresh, live=live)
     signals = [MacroSignal(**sd) for sd in tape.get("signals", [])]
 
     # 4. regime + persona weights
@@ -73,7 +74,7 @@ def generate_trade_brief(*,
         cands = [c for c in cands if (c.get("root") or "").upper() in wanted_roots]
 
     # 7. fetch chains
-    chains = fetch_chains_for_candidates(cands, fresh=fresh)
+    chains = fetch_chains_for_candidates(cands, fresh=fresh, live=live)
 
     # 8. select trades + Opus validation
     sel = select_trades(

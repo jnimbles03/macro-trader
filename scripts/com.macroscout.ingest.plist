@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.macroscout.ingest</string>
+
+  <!--
+    Run macro-scout ingest-all every 15 minutes.
+
+    Both __MACRO_SCOUT_HOME__ and __VENV_BIN__ are placeholders that
+    scripts/install-launchd.sh substitutes with the user's actual paths
+    before copying the file into ~/Library/LaunchAgents/.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__VENV_BIN__/macro-scout</string>
+    <string>ingest-all</string>
+    <string>--lookback</string>
+    <string>1h</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__MACRO_SCOUT_HOME__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__VENV_BIN__:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>900</integer> <!-- 15 minutes -->
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__MACRO_SCOUT_HOME__/data/launchd-ingest.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__MACRO_SCOUT_HOME__/data/launchd-ingest.err.log</string>
+</dict>
+</plist>

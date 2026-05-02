@@ -57,13 +57,55 @@ macro-scout poke
 macro-scout poke --lookback 24h
 macro-scout poke --market rates|equity|commodities|fx
 macro-scout poke --risk-profile conservative|balanced|aggressive|yolo
-macro-scout poke --fresh
+macro-scout poke --fresh             # bypass in-process TTL cache
+macro-scout poke --live              # bypass the warehouse, hit vendor APIs directly
 macro-scout poke --dry-run
 macro-scout headlines
 macro-scout paper-log
 macro-scout backtest-signals
 macro-scout config-check
+macro-scout data-status              # last ingest per vendor + warehouse counts
+macro-scout ingest-all               # run every ingest job (cron / launchd target)
+macro-scout ingest-headlines [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+macro-scout ingest-fred       [--from YYYY-MM-DD]
+macro-scout ingest-chains     --roots ZN,ES [--expiration YYYY-MM-DD]
 ```
+
+## Data warehouse
+
+The bot is split into a write-side **ingest layer** and a read-side **query
+layer**, both backed by the SQLite DB at `./data/macro_scout.db`.
+
+```
+ingest jobs            warehouse                      trading bots
+─────────────          ─────────                      ────────────
+GDELT     ─┐                                          ┌─ macro-scout poke
+NewsAPI   ─┼─► headlines       ──┐                    │
+RSS       ─┘                     │                    │
+FRED      ──► macro_signals      ├─► reads ──────────►┤  (your next bot)
+IBKR      ──► option_chains    ──┘                    │
+              + option_contracts                      └─ ...
+```
+
+Schedule the ingest jobs externally so the warehouse stays warm:
+
+```bash
+./scripts/install-launchd.sh    # macOS launchd, runs ingest-all every 15 min
+./scripts/uninstall-launchd.sh
+```
+
+Trading bots query the warehouse without hitting any vendor APIs themselves.
+`--live` on a `poke` skips the warehouse and pulls fresh from vendors —
+useful if you can't wait for the next cron tick.
+
+Backfill: `ingest-headlines --from 2026-04-01` chunks the window into 24h
+slices and pulls everything within. FRED ingest with `--from` does the same
+on a per-series basis.
+
+Adding a new vendor = drop a new file under `app/ingest/`, register it in
+`runner.run_all`. Each vendor module exposes a single
+`def ingest(*, since=None, lookback_hours=24, **kwargs) -> int` that returns
+rows-added.
 
 ## Mock mode
 

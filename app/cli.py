@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import typer
@@ -17,7 +18,12 @@ from app.data.news_ingest import fetch_recent_headlines
 from app.reports.markdown_renderer import render_brief
 from app.reports.trade_report import generate_trade_brief
 from app.storage.migrations import init_schema
-from app.storage.repository import list_paper_trades, log_run, save_paper_trade
+from app.storage.repository import (
+    ingest_status,
+    list_paper_trades,
+    log_run,
+    save_paper_trade,
+)
 
 app = typer.Typer(help="Macro Options Scout — research-only options trade ideas.", no_args_is_help=True)
 console = Console()
@@ -30,6 +36,7 @@ def poke(
     market: Optional[str] = typer.Option(None, help="rates|equity|commodities|fx"),
     risk_profile: str = typer.Option("balanced", help="conservative|balanced|aggressive|yolo"),
     fresh: bool = typer.Option(False, help="Bypass all caches"),
+    live: bool = typer.Option(False, "--live", help="Bypass the data warehouse and hit vendor APIs directly"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Don't write to paper-trade log"),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of markdown"),
 ):
@@ -44,6 +51,7 @@ def poke(
         market_filter=market,
         risk_profile=risk_profile,
         fresh=fresh,
+        live=live,
     )
 
     if json_out:
@@ -82,7 +90,8 @@ def poke(
 # --------------------------------------------------------------------------
 @app.command()
 def headlines(lookback: str = typer.Option("24h", help="Lookback window")):
-    """Show the last N hours of (deduped) headlines."""
+    """Show the last N hours of (deduped) headlines from the data warehouse."""
+    init_schema()
     hours = _parse_hours(lookback)
     raw = fetch_recent_headlines(lookback_hours=hours)
     table = Table(title=f"Headlines (last {hours}h)")
@@ -138,10 +147,14 @@ def config_check():
     table.add_row("validator_model", s.anthropic_model)
     table.add_row("XAI_API_KEY", _redact(s.xai_api_key))
     table.add_row("ANTHROPIC_API_KEY", _redact(s.anthropic_api_key))
+    table.add_row("FRED_API_KEY", _redact(s.fred_api_key))
+    table.add_row("NEWSAPI_KEY", _redact(s.newsapi_key))
     table.add_row("MOCK_DATA", str(s.mock_data))
     table.add_row("PAPER_MODE", str(s.paper_mode))
     table.add_row("ALLOW_LIVE_TRADING", str(s.allow_live_trading))
     table.add_row("ALLOW_0DTE", str(s.allow_0dte))
+    table.add_row("IBKR_ENABLED", str(s.ibkr_enabled))
+    table.add_row("IBKR_PORT", str(s.ibkr_port))
     table.add_row("MIN_SPREAD_RR", f"{s.min_spread_rr:.2f}")
     table.add_row("YOLO_MAX_PREMIUM_DOLLARS", f"{s.yolo_max_premium_dollars:.2f}")
     table.add_row("supported roots", ", ".join(sorted(SUPPORTED_ROOTS)))
@@ -151,12 +164,152 @@ def config_check():
         sys.exit(0)
 
 
+# ==========================================================================
+# Data warehouse — ingest commands
+# ==========================================================================
+
+@app.command("ingest-headlines")
+def ingest_headlines(
+    lookback: str = typer.Option("24h", help="Recent-mode lookback window"),
+    backfill_from: Optional[str] = typer.Option(None, "--from", help="Backfill from YYYY-MM-DD"),
+    backfill_to: Optional[str] = typer.Option(None, "--to", help="Backfill until YYYY-MM-DD (default: now)"),
+    sources: str = typer.Option("gdelt,newsapi,rss", help="Comma-separated subset"),
+):
+    """Pull headlines from each enabled source into the warehouse."""
+    init_schema()
+    from app.ingest import gdelt, newsapi, rss
+    from app.ingest.runner import run_one
+
+    since = _parse_date(backfill_from)
+    until = _parse_date(backfill_to)
+    hours = _parse_hours(lookback)
+
+    wanted = {s.strip().lower() for s in sources.split(",") if s.strip()}
+    results = []
+    if "gdelt" in wanted:
+        results.append(run_one("gdelt", gdelt.ingest,
+                                lookback_hours=hours, since=since, until=until))
+    if "newsapi" in wanted:
+        results.append(run_one("newsapi", newsapi.ingest,
+                                lookback_hours=hours, since=since, until=until))
+    if "rss" in wanted:
+        results.append(run_one("rss", rss.ingest,
+                                lookback_hours=hours, since=since, until=until))
+    _print_ingest_table(results)
+
+
+@app.command("ingest-fred")
+def ingest_fred(
+    backfill_from: Optional[str] = typer.Option(None, "--from", help="Backfill from YYYY-MM-DD"),
+):
+    """Pull FRED macro signals into the warehouse."""
+    init_schema()
+    from app.ingest import fred
+    from app.ingest.runner import run_one
+
+    since = _parse_date(backfill_from)
+    res = run_one("fred", fred.ingest, since=since)
+    _print_ingest_table([res])
+
+
+@app.command("ingest-chains")
+def ingest_chains(
+    roots: str = typer.Option("ZN,ES", help="Comma-separated roots, e.g. ZN,ES,CL"),
+    expiration: Optional[str] = typer.Option(None, help="Specific expiration YYYY-MM-DD (default: front-month)"),
+):
+    """Snapshot option chains from IBKR for the given roots."""
+    init_schema()
+    from app.ingest import ibkr_chain
+    from app.ingest.runner import run_one
+
+    results = []
+    for r in [x.strip().upper() for x in roots.split(",") if x.strip()]:
+        results.append(run_one(
+            f"ibkr:{r}", ibkr_chain.ingest, root=r, expiration=expiration,
+        ))
+    _print_ingest_table(results)
+
+
+@app.command("ingest-all")
+def ingest_all(
+    lookback: str = typer.Option("24h"),
+    chains: bool = typer.Option(False, "--chains", help="Also pull option chains (requires IB Gateway)"),
+    chain_roots: str = typer.Option("ZN,ES", help="Roots when --chains is on"),
+):
+    """Run every ingest job. Suitable target for cron / launchd."""
+    init_schema()
+    from app.ingest.runner import run_all
+
+    hours = _parse_hours(lookback)
+    roots = [r.strip().upper() for r in chain_roots.split(",") if r.strip()]
+    results = run_all(
+        lookback_hours=hours,
+        include_chains=chains,
+        chain_roots=roots,
+    )
+    _print_ingest_table(results)
+
+
+@app.command("data-status")
+def data_status():
+    """Show last ingest per vendor + warehouse table sizes."""
+    init_schema()
+    info = ingest_status()
+
+    per_vendor = info[0]["per_vendor"]
+    table = Table(title="Last ingest per vendor")
+    table.add_column("vendor")
+    table.add_column("last completed")
+    table.add_column("rows (success)", justify="right")
+    table.add_column("runs", justify="right")
+    if not per_vendor:
+        table.add_row("(none yet)", "-", "-", "-")
+    else:
+        for r in per_vendor:
+            table.add_row(
+                r["vendor"],
+                str(r["last_ok"] or "-"),
+                str(r["total_rows_ok"] or 0),
+                str(r["runs"]),
+            )
+    console.print(table)
+
+    counts = info[1]["warehouse_counts"]
+    sizes = Table(title="Warehouse table sizes")
+    sizes.add_column("table")
+    sizes.add_column("rows", justify="right")
+    for k, v in counts.items():
+        sizes.add_row(k, str(v))
+    console.print(sizes)
+
+
 # --------------------------------------------------------------------------
 def _parse_hours(s: str) -> int:
     s = s.strip().lower()
     if s.endswith("h"):
         return int(s[:-1])
     return int(s)
+
+
+def _parse_date(s: Optional[str]) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        d = date.fromisoformat(s)
+        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    except Exception:
+        raise typer.BadParameter(f"Invalid date '{s}'; expected YYYY-MM-DD")
+
+
+def _print_ingest_table(results) -> None:
+    table = Table(title="Ingest results")
+    table.add_column("vendor")
+    table.add_column("status")
+    table.add_column("rows added", justify="right")
+    table.add_column("error", overflow="fold")
+    for r in results:
+        table.add_row(r.vendor, r.status, str(r.rows_added), r.error or "")
+    console.print(table)
 
 
 if __name__ == "__main__":

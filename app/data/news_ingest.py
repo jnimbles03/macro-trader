@@ -1,8 +1,14 @@
-"""Headline ingestion.
+"""Headline query layer.
 
-Live mode pulls from GDELT (free), NewsAPI (if keyed), and an RSS bundle for
-top-tier wires. Mock mode reads `fixtures/headlines_sample.json` so the test
-suite + offline runs are deterministic.
+By default, reads from the data warehouse (`headlines` table). Use `live=True`
+to bypass the warehouse and call vendor APIs directly — useful for `--live`
+pokes when you want bleeding-edge data and the cron hasn't run yet.
+
+Mock mode (`MOCK_DATA=true`) reads `fixtures/headlines_sample.json` so the
+test suite + offline runs are deterministic.
+
+The actual fetch logic for each vendor lives in `app/ingest/{vendor}.py` —
+this module only chooses where to read from.
 """
 
 from __future__ import annotations
@@ -11,66 +17,62 @@ import json
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Any
-
-import httpx
 
 from app.config import get_settings
 from app.data.cache import cache_key, cached_call
 from app.models.headline import CredibilityTier, Headline
+from app.storage.repository import query_headlines
 
 log = logging.getLogger(__name__)
 
-# Top-tier wires + market RSS for breadth. Tier reflects the source's macro
-# credibility, not its overall journalism rating.
-_RSS_FEEDS: list[tuple[str, CredibilityTier]] = [
-    ("https://www.federalreserve.gov/feeds/press_all.xml", CredibilityTier.TIER_1),
-    ("https://home.treasury.gov/rss/press-releases.xml", CredibilityTier.TIER_1),
-    ("https://www.bea.gov/rss.xml", CredibilityTier.TIER_1),
-    ("https://www.bls.gov/feed/news_release/empsit.rss", CredibilityTier.TIER_1),
-    ("https://www.eia.gov/rss/press_releases.xml", CredibilityTier.TIER_1),
-    ("https://www.ecb.europa.eu/rss/press.html", CredibilityTier.TIER_1),
-    # Free market RSS — broad enough to fill in when GDELT/NewsAPI are quiet.
-    ("https://feeds.content.dowjones.io/public/rss/mw_topstories", CredibilityTier.TIER_3),  # MarketWatch
-    ("https://finance.yahoo.com/news/rssindex", CredibilityTier.TIER_3),
-    ("https://www.cnbc.com/id/100003114/device/rss/rss.html", CredibilityTier.TIER_3),       # CNBC top news
-    ("https://feeds.reuters.com/reuters/businessNews", CredibilityTier.TIER_1),               # Reuters business
-]
 
-
-def fetch_recent_headlines(*, lookback_hours: int = 24, fresh: bool = False) -> list[Headline]:
+def fetch_recent_headlines(*, lookback_hours: int = 24, fresh: bool = False,
+                           live: bool = False) -> list[Headline]:
     s = get_settings()
-    key = cache_key("headlines", lookback_hours, "mock" if s.mock_data else "live")
+    key = cache_key("headlines", lookback_hours, "live" if live else "warehouse",
+                    "mock" if s.mock_data else "real")
     return cached_call(
         key,
         ttl_seconds=s.cache_headlines_min * 60,
         fresh=fresh,
-        loader=lambda: _load(s, lookback_hours),
+        loader=lambda: _load(s, lookback_hours, live=live),
     )
 
 
-def _load(s, lookback_hours: int) -> list[Headline]:
+def _load(s, lookback_hours: int, *, live: bool) -> list[Headline]:
     if s.mock_data:
         return _load_fixture()
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)
-    counts: dict[str, int] = {}
-    out: list[Headline] = []
-    if s.gdelt_enabled:
-        gd = _fetch_gdelt(lookback_hours)
-        counts["gdelt"] = len(gd)
-        out.extend(gd)
-    if s.newsapi_key:
-        na = _fetch_newsapi(s.newsapi_key, lookback_hours)
-        counts["newsapi"] = len(na)
-        out.extend(na)
-    rss = _fetch_rss(lookback_hours)
-    counts["rss"] = len(rss)
-    out.extend(rss)
-    out = [h for h in out if h.published_at >= cutoff]
-    before = len(out)
-    out = [h for h in out if _passes_relevance(h)]
-    print(f"news ingest: raw={counts} | post-relevance: {before}->{len(out)}", file=sys.stderr)
+
+    if live:
+        return _load_live(lookback_hours)
+
+    # Default path: read from warehouse.
+    since = datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)
+    rows = query_headlines(since=since, limit=500)
+    out = [h for h in rows if _passes_relevance(h)]
+    print(f"news query (warehouse): {len(rows)} rows -> {len(out)} after relevance filter",
+          file=sys.stderr)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Live bypass — fetch from vendors directly. Useful when you don't want to
+# wait for the next cron tick. Persists what it fetches into the warehouse
+# as a side effect so the data is preserved.
+# ---------------------------------------------------------------------------
+def _load_live(lookback_hours: int) -> list[Headline]:
+    from app.ingest import gdelt, newsapi, rss
+    from app.ingest.runner import run_one
+
+    counts = {}
+    for name, fn in (("gdelt", gdelt.ingest), ("newsapi", newsapi.ingest), ("rss", rss.ingest)):
+        res = run_one(name, fn, lookback_hours=lookback_hours)
+        counts[name] = res.rows_added
+    print(f"news ingest (live): {counts}", file=sys.stderr)
+
+    since = datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)
+    rows = query_headlines(since=since, limit=500)
+    return [h for h in rows if _passes_relevance(h)]
 
 
 # ---------------------------------------------------------------------------
@@ -121,195 +123,3 @@ def _load_fixture() -> list[Headline]:
     path = s.fixtures_dir / "headlines_sample.json"
     raw = json.loads(path.read_text())
     return [Headline(**h) for h in raw]
-
-
-# ---------------------------------------------------------------------------
-# GDELT (free; no key required)
-# Docs: https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/
-# ---------------------------------------------------------------------------
-def _fetch_gdelt(lookback_hours: int) -> list[Headline]:
-    # Theme-based filter is far more precise than free-text. Combined with a
-    # domain allow-list of macro-grade sources, this kills the local-newspaper
-    # noise that the previous query was pulling in.
-    domains = (
-        "domain:reuters.com OR domain:apnews.com OR domain:ft.com OR domain:wsj.com "
-        "OR domain:bloomberg.com OR domain:cnbc.com OR domain:marketwatch.com "
-        "OR domain:economist.com OR domain:nikkei.com OR domain:politico.com"
-    )
-    themes = (
-        "theme:ECON_INTEREST_RATES OR theme:ECON_INFLATION OR theme:ECON_CENTRAL_BANK "
-        "OR theme:ECON_DEBT OR theme:ECON_TRADE_DEAL OR theme:ECON_BANK_DEBT "
-        "OR theme:ECON_BANKRUPTCY OR theme:ECON_STIMULUS OR theme:ECON_MONOPOLY"
-    )
-    url = "https://api.gdeltproject.org/api/v2/doc/doc"
-    params = {
-        "query": f"({domains}) AND ({themes}) sourcelang:eng",
-        "mode": "ArtList",
-        "format": "json",
-        "maxrecords": 50,
-        "timespan": f"{lookback_hours}h",
-        "sort": "datedesc",
-    }
-    try:
-        with httpx.Client(timeout=20.0) as c:
-            r = c.get(url, params=params)
-            if r.status_code == 429:
-                log.warning("GDELT rate-limited (429); skipping this run")
-                return []
-            r.raise_for_status()
-            if not r.text or not r.text.strip().startswith("{"):
-                log.warning("GDELT returned non-JSON body (likely throttle page); skipping")
-                return []
-            data = r.json()
-    except Exception as e:
-        log.warning("GDELT fetch failed: %s", e)
-        return []
-    out: list[Headline] = []
-    for art in data.get("articles", []):
-        try:
-            ts = datetime.strptime(art["seendate"], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-            domain = art.get("domain", "")
-            tier = _tier_from_domain(domain)
-            out.append(Headline(
-                title=art["title"],
-                source=domain or "GDELT",
-                tier=tier,
-                published_at=ts,
-                url=art["url"],
-                country=art.get("sourcecountry"),
-            ))
-        except Exception:
-            continue
-    return out
-
-
-# ---------------------------------------------------------------------------
-# NewsAPI (https://newsapi.org)
-# ---------------------------------------------------------------------------
-def _fetch_newsapi(key: str, lookback_hours: int) -> list[Headline]:
-    cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Phrase-quoted OR. NewsAPI tokenises unquoted text, so `Federal Reserve`
-    # was matching anything with "federal" or "reserve" — junk.
-    # NOTE: do NOT pass a `domains` whitelist — NewsAPI's free Developer tier
-    # excludes paywalled publishers (WSJ/FT/Bloomberg/Nikkei/Economist), so a
-    # whitelist of those would return zero results. The post-fetch relevance
-    # gate handles the noise filtering.
-    q = (
-        '"Federal Reserve" OR "FOMC" OR "ECB" OR "Bank of Japan" OR '
-        '"core PCE" OR "CPI" OR "Treasury refunding" OR "OPEC" OR '
-        '"yield curve" OR "10-year yield" OR "rate cut" OR "rate hike"'
-    )
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": q,
-        "from": cutoff,
-        "language": "en",
-        "sortBy": "publishedAt",
-        "pageSize": 100,
-    }
-    headers = {"X-Api-Key": key}
-    try:
-        with httpx.Client(timeout=20.0) as c:
-            r = c.get(url, params=params, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        log.warning("NewsAPI fetch failed: %s", e)
-        return []
-    out: list[Headline] = []
-    for art in data.get("articles", []):
-        try:
-            ts = datetime.fromisoformat(art["publishedAt"].replace("Z", "+00:00"))
-            src_name = (art.get("source") or {}).get("name", "NewsAPI")
-            tier = _tier_from_source_name(src_name)
-            out.append(Headline(
-                title=art.get("title") or "",
-                source=src_name,
-                tier=tier,
-                published_at=ts,
-                url=art.get("url") or "",
-                summary=art.get("description"),
-            ))
-        except Exception:
-            continue
-    return out
-
-
-# ---------------------------------------------------------------------------
-# RSS — central banks + statistical agencies
-# ---------------------------------------------------------------------------
-def _fetch_rss(lookback_hours: int) -> list[Headline]:
-    try:
-        import feedparser
-    except ImportError:
-        log.warning("feedparser not installed; skipping RSS")
-        return []
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)
-    out: list[Headline] = []
-    for url, tier in _RSS_FEEDS:
-        try:
-            feed = feedparser.parse(url)
-        except Exception as e:
-            log.warning("RSS %s failed: %s", url, e)
-            continue
-        for entry in feed.entries[:25]:
-            try:
-                ts = _parse_rss_time(entry)
-                if ts is None or ts < cutoff:
-                    continue
-                out.append(Headline(
-                    title=entry.get("title", ""),
-                    source=feed.feed.get("title", url),
-                    tier=tier,
-                    published_at=ts,
-                    url=entry.get("link", url),
-                    summary=entry.get("summary"),
-                ))
-            except Exception:
-                continue
-    return out
-
-
-def _parse_rss_time(entry: Any) -> datetime | None:
-    import time as _time
-    parsed = entry.get("published_parsed") or entry.get("updated_parsed")
-    if not parsed:
-        return None
-    return datetime.fromtimestamp(_time.mktime(parsed), tz=timezone.utc)
-
-
-# ---------------------------------------------------------------------------
-# Tier inference. Conservative: when in doubt, drop a tier.
-# ---------------------------------------------------------------------------
-_TIER_1_DOMAINS = {
-    "federalreserve.gov", "treasury.gov", "bls.gov", "bea.gov", "eia.gov",
-    "ecb.europa.eu", "bankofengland.co.uk", "boj.or.jp", "imf.org",
-    "reuters.com", "apnews.com",
-}
-_TIER_2_DOMAINS = {
-    "ft.com", "wsj.com", "bloomberg.com", "nikkei.com", "politico.com",
-    "barrons.com", "economist.com",
-}
-_TIER_4_DOMAINS = {"reddit.com", "x.com", "twitter.com", "medium.com", "substack.com"}
-
-
-def _tier_from_domain(domain: str) -> CredibilityTier:
-    d = (domain or "").lower()
-    if any(d.endswith(t) for t in _TIER_1_DOMAINS):
-        return CredibilityTier.TIER_1
-    if any(d.endswith(t) for t in _TIER_2_DOMAINS):
-        return CredibilityTier.TIER_2
-    if any(d.endswith(t) for t in _TIER_4_DOMAINS):
-        return CredibilityTier.TIER_4
-    return CredibilityTier.TIER_3
-
-
-def _tier_from_source_name(name: str) -> CredibilityTier:
-    n = (name or "").lower()
-    if any(s in n for s in ("federal reserve", "treasury", "bls", "bea", "eia", "reuters", "associated press")):
-        return CredibilityTier.TIER_1
-    if any(s in n for s in ("financial times", "wall street journal", "bloomberg", "nikkei", "politico")):
-        return CredibilityTier.TIER_2
-    if any(s in n for s in ("reddit", "x ", "twitter", "medium")):
-        return CredibilityTier.TIER_4
-    return CredibilityTier.TIER_3
