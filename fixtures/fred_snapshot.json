@@ -1,0 +1,14 @@
+{
+  "as_of": "2026-05-02T00:00:00Z",
+  "series": [
+    {"series_id": "DGS2", "label": "2y Treasury yield", "value": 4.62, "as_of": "2026-05-01T20:00:00Z", "units": "percent"},
+    {"series_id": "DGS10", "label": "10y Treasury yield", "value": 4.51, "as_of": "2026-05-01T20:00:00Z", "units": "percent"},
+    {"series_id": "DGS30", "label": "30y Treasury yield", "value": 4.68, "as_of": "2026-05-01T20:00:00Z", "units": "percent"},
+    {"series_id": "DFF", "label": "Effective Fed Funds Rate", "value": 5.33, "as_of": "2026-05-01T20:00:00Z", "units": "percent"},
+    {"series_id": "T10Y2Y", "label": "10y-2y spread", "value": -0.11, "as_of": "2026-05-01T20:00:00Z", "units": "percent"},
+    {"series_id": "T10Y3M", "label": "10y-3m spread", "value": -0.74, "as_of": "2026-05-01T20:00:00Z", "units": "percent"},
+    {"series_id": "DXY", "label": "Dollar index", "value": 105.4, "as_of": "2026-05-01T20:00:00Z", "units": "index"},
+    {"series_id": "VIXCLS", "label": "VIX close", "value": 16.1, "as_of": "2026-05-01T20:00:00Z", "units": "index"},
+    {"series_id": "MOVE", "label": "MOVE index (rates vol)", "value": 122.5, "as_of": "2026-05-01T20:00:00Z", "units": "index"}
+  ]
+}

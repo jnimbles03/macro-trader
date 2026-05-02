@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Macro Options Scout</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Macro Options Scout</h1>
+    <p class="muted">Research only — never financial advice.</p>
+  </header>
+  <main>
+    <form action="/poke" method="get" class="poke-form">
+      <label>Lookback hours
+        <input type="number" name="lookback" value="24" min="1" max="168" />
+      </label>
+      <label>Market filter
+        <select name="market">
+          <option value="">all</option>
+          <option value="rates">rates</option>
+          <option value="equity">equity</option>
+          <option value="commodities">commodities</option>
+          <option value="fx">fx</option>
+        </select>
+      </label>
+      <label><input type="checkbox" name="fresh" value="true" /> Bypass cache</label>
+      <button type="submit">Poke</button>
+    </form>
+    <p class="muted">Primary: Grok 4.1 Full. Validator: Claude Opus.</p>
+  </main>
+</body>
+</html>

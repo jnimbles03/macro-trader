@@ -1,0 +1,20 @@
+{
+  "root": "ZN",
+  "underlying_symbol": "ZNM6",
+  "underlying_price": 110.00,
+  "expiration": "2026-05-23",
+  "quote_time": "2026-05-02T00:00:00Z",
+  "multiplier": 1000.0,
+  "tick_size": 0.015625,
+  "risk_free_rate": 0.05,
+  "contracts": [
+    {"option_type": "P", "strike": 110.0,  "bid": 0.485, "ask": 0.495, "iv": 0.072, "delta": -0.49, "gamma": 0.21, "theta": -0.0050, "vega": 0.105, "volume": 1240, "open_interest": 8200},
+    {"option_type": "P", "strike": 109.5,  "bid": 0.305, "ask": 0.315, "iv": 0.071, "delta": -0.36, "gamma": 0.18, "theta": -0.0040, "vega": 0.095, "volume":  860, "open_interest": 6500},
+    {"option_type": "P", "strike": 109.0,  "bid": 0.195, "ask": 0.205, "iv": 0.070, "delta": -0.27, "gamma": 0.14, "theta": -0.0035, "vega": 0.085, "volume":  780, "open_interest": 5800},
+    {"option_type": "P", "strike": 108.5,  "bid": 0.118, "ask": 0.122, "iv": 0.070, "delta": -0.18, "gamma": 0.10, "theta": -0.0028, "vega": 0.072, "volume":  640, "open_interest": 5200},
+    {"option_type": "P", "strike": 108.0,  "bid": 0.065, "ask": 0.075, "iv": 0.069, "delta": -0.11, "gamma": 0.07, "theta": -0.0021, "vega": 0.058, "volume":  410, "open_interest": 4100},
+    {"option_type": "C", "strike": 110.0,  "bid": 0.485, "ask": 0.495, "iv": 0.072, "delta":  0.51, "gamma": 0.21, "theta": -0.0050, "vega": 0.105, "volume": 1180, "open_interest": 8100},
+    {"option_type": "C", "strike": 110.5,  "bid": 0.305, "ask": 0.315, "iv": 0.071, "delta":  0.39, "gamma": 0.18, "theta": -0.0040, "vega": 0.095, "volume":  790, "open_interest": 6300},
+    {"option_type": "C", "strike": 111.0,  "bid": 0.195, "ask": 0.205, "iv": 0.070, "delta":  0.28, "gamma": 0.14, "theta": -0.0035, "vega": 0.085, "volume":  710, "open_interest": 5600}
+  ]
+}
