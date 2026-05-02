@@ -8,8 +8,22 @@ chain (root + expiration), and persists it to `option_chains` +
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime, timezone
 from typing import Any
+
+
+def _safe_price(v: Any) -> float | None:
+    """IBKR returns NaN/None/-1 for unsubscribed quotes. Treat all as missing."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or f <= 0:
+        return None
+    return f
 
 from app.config import get_settings
 from app.models.option_contract import OptionChain, OptionContract, OptionType
@@ -103,21 +117,27 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
         log.info("[%s] requesting market data for underlying", root)
         ticker = ib.reqMktData(future_contract, "", snapshot=True)
         ib.sleep(2.0)
-        underlying_price = ticker.marketPrice()
-        if underlying_price is None or underlying_price != underlying_price:
-            underlying_price = ticker.last or ticker.close
+        # NaN-safe: market data farms return NaN/-1 for unsubscribed feeds.
+        underlying_price = (
+            _safe_price(ticker.marketPrice())
+            or _safe_price(ticker.last)
+            or _safe_price(ticker.close)
+        )
         log.info("[%s] underlying mark: %s (last=%s close=%s bid=%s ask=%s)",
                  root, underlying_price, ticker.last, ticker.close, ticker.bid, ticker.ask)
-        if not underlying_price:
+        if underlying_price is None:
             log.warning("[%s] no underlying mark — likely missing real-time market data subscription",
                         root)
             return None
         underlying_symbol = future_contract.localSymbol or f"{root}{future_contract.lastTradeDateOrContractMonth}"
 
-        # Resolve expiration via secdef params.
-        log.info("[%s] requesting option chain params (secdef)", root)
+        # Resolve expiration via secdef params. The futFopExchange param is REQUIRED
+        # for FUT — passing "" yields 'Error validating request: Missing exchange
+        # for security type FUT' from IBKR.
+        log.info("[%s] requesting option chain params (secdef, exchange=%s)",
+                 root, meta["exchange"])
         params = ib.reqSecDefOptParams(
-            future_contract.symbol, "", "FUT", future_contract.conId
+            future_contract.symbol, meta["exchange"], "FUT", future_contract.conId
         )
         if not params:
             log.warning("[%s] no option params returned (no options on this future, "
