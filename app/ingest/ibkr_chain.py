@@ -92,11 +92,12 @@ _IBKR_META: dict[str, dict[str, Any]] = {
 
 def ingest(*, root: str, expiration: str | None = None,
            strikes: list[float] | None = None,
-           num_strikes: int = 11, **_kwargs) -> int:
+           num_strikes: int = 41, **_kwargs) -> int:
     """Pull a chain for `root` at the front-month expiration (or `expiration`).
 
     `strikes` overrides the auto-selection. `num_strikes` controls how many
     near-the-money strikes to pull when auto-selecting (calls + puts each).
+    Default 41 is wide enough to cover OTM YOLO strikes for typical roots.
     Returns 1 on success (one chain row written) or 0 on skip/failure.
     """
     s = get_settings()

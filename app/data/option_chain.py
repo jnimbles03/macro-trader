@@ -61,7 +61,16 @@ def _load_chain(root: str, candidates: list[dict], *, live: bool) -> OptionChain
 
     expirations = sorted({c["expiration"] for c in candidates if c.get("expiration")})
     expiration_d = date.fromisoformat(expirations[0]) if expirations else None
-    return latest_chain(root, expiration_d)
+
+    # Try exact-expiration match first; fall back to any expiration for this
+    # root so a slightly-mismatched expiry from the LLM doesn't kill the trade.
+    chain = latest_chain(root, expiration_d)
+    if chain is None and expiration_d is not None:
+        chain = latest_chain(root, None)
+        if chain is not None:
+            log.info("[%s] no chain for requested expiration %s; falling back to "
+                     "latest available (%s)", root, expiration_d, chain.expiration)
+    return chain
 
 
 def _live_snapshot(root: str, candidates: list[dict]) -> OptionChain | None:
