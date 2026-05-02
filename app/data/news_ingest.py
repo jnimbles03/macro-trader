@@ -21,7 +21,8 @@ from app.models.headline import CredibilityTier, Headline
 
 log = logging.getLogger(__name__)
 
-# Top-tier wires; extend as needed.
+# Top-tier wires + market RSS for breadth. Tier reflects the source's macro
+# credibility, not its overall journalism rating.
 _RSS_FEEDS: list[tuple[str, CredibilityTier]] = [
     ("https://www.federalreserve.gov/feeds/press_all.xml", CredibilityTier.TIER_1),
     ("https://home.treasury.gov/rss/press-releases.xml", CredibilityTier.TIER_1),
@@ -29,6 +30,11 @@ _RSS_FEEDS: list[tuple[str, CredibilityTier]] = [
     ("https://www.bls.gov/feed/news_release/empsit.rss", CredibilityTier.TIER_1),
     ("https://www.eia.gov/rss/press_releases.xml", CredibilityTier.TIER_1),
     ("https://www.ecb.europa.eu/rss/press.html", CredibilityTier.TIER_1),
+    # Free market RSS — broad enough to fill in when GDELT/NewsAPI are quiet.
+    ("https://feeds.content.dowjones.io/public/rss/mw_topstories", CredibilityTier.TIER_3),  # MarketWatch
+    ("https://finance.yahoo.com/news/rssindex", CredibilityTier.TIER_3),
+    ("https://www.cnbc.com/id/100003114/device/rss/rss.html", CredibilityTier.TIER_3),       # CNBC top news
+    ("https://feeds.reuters.com/reuters/businessNews", CredibilityTier.TIER_1),               # Reuters business
 ]
 
 
@@ -182,8 +188,12 @@ def _fetch_gdelt(lookback_hours: int) -> list[Headline]:
 # ---------------------------------------------------------------------------
 def _fetch_newsapi(key: str, lookback_hours: int) -> list[Headline]:
     cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Phrase-quoted OR + domain allow-list. NewsAPI tokenises unquoted text, so
-    # `Federal Reserve` was matching anything with "federal" or "reserve" — junk.
+    # Phrase-quoted OR. NewsAPI tokenises unquoted text, so `Federal Reserve`
+    # was matching anything with "federal" or "reserve" — junk.
+    # NOTE: do NOT pass a `domains` whitelist — NewsAPI's free Developer tier
+    # excludes paywalled publishers (WSJ/FT/Bloomberg/Nikkei/Economist), so a
+    # whitelist of those would return zero results. The post-fetch relevance
+    # gate handles the noise filtering.
     q = (
         '"Federal Reserve" OR "FOMC" OR "ECB" OR "Bank of Japan" OR '
         '"core PCE" OR "CPI" OR "Treasury refunding" OR "OPEC" OR '
@@ -195,8 +205,7 @@ def _fetch_newsapi(key: str, lookback_hours: int) -> list[Headline]:
         "from": cutoff,
         "language": "en",
         "sortBy": "publishedAt",
-        "pageSize": 50,
-        "domains": "reuters.com,apnews.com,ft.com,wsj.com,bloomberg.com,cnbc.com,marketwatch.com,economist.com,nikkei.com",
+        "pageSize": 100,
     }
     headers = {"X-Api-Key": key}
     try:
