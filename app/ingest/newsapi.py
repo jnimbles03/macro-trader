@@ -21,9 +21,8 @@ log = logging.getLogger(__name__)
 VENDOR = "newsapi"
 
 _QUERY = (
-    '"Federal Reserve" OR "FOMC" OR "ECB" OR "Bank of Japan" OR '
-    '"core PCE" OR "CPI" OR "Treasury refunding" OR "OPEC" OR '
-    '"yield curve" OR "10-year yield" OR "rate cut" OR "rate hike"'
+    '"Federal Reserve" OR "FOMC" OR "ECB" OR "OPEC" OR '
+    '"yield curve" OR "rate cut" OR "rate hike" OR "core PCE"'
 )
 
 
@@ -54,14 +53,12 @@ def _fetch(key: str, since: datetime, until: datetime) -> list[dict]:
         "pageSize": 100,
     }
     headers = {"X-Api-Key": key}
-    try:
-        with httpx.Client(timeout=20.0) as c:
-            r = c.get(url, params=params, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        log.warning("NewsAPI fetch failed: %s", e)
-        return []
+    with httpx.Client(timeout=20.0) as c:
+        r = c.get(url, params=params, headers=headers)
+        if r.status_code >= 400:
+            # NewsAPI puts the real error in the body; surface it.
+            raise RuntimeError(f"NewsAPI {r.status_code}: {r.text[:500]}")
+        data = r.json()
 
     out: list[dict] = []
     for art in data.get("articles", []):
