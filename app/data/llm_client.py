@@ -111,6 +111,11 @@ class OpusValidator:
         from anthropic import Anthropic
 
         client = Anthropic(api_key=self.s.anthropic_api_key)
+        # Opus 4.7 API shape:
+        #   - `temperature` / `top_p` / `top_k` removed (400 if sent)
+        #   - `thinking={"type": "enabled", "budget_tokens": N}` removed
+        #   - Use `thinking={"type": "adaptive"}` + `output_config={"effort": ...}`
+        #     where effort ∈ low | medium | high | xhigh | max
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4000,
@@ -118,12 +123,8 @@ class OpusValidator:
             "messages": [{"role": "user", "content": user}],
         }
         if self.s.extended_thinking:
-            kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": self.s.thinking_budget_tokens,
-            }
-            # Extended thinking requires temperature=1
-            kwargs["temperature"] = 1.0
+            kwargs["thinking"] = {"type": "adaptive"}
+            kwargs["output_config"] = {"effort": "high"}
 
         msg = client.messages.create(**kwargs)
         # Pull the first text block; thinking blocks are skipped.
