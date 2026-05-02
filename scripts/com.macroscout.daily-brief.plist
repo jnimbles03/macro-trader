@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.macroscout.daily-brief</string>
+
+  <!--
+    Daily pre-market poke. Runs `macro-scout poke --fresh` once on weekday
+    mornings and writes the markdown brief to data/morning-brief-YYYYMMDD.md.
+
+    8:00am US Eastern. launchd uses *local* time for StartCalendarInterval,
+    so this fires at 8am whether you're in EST or EDT — no DST math.
+
+    If the Mac is asleep at 8:00am, launchd runs the job the next time the
+    Mac wakes (cron would silently skip).
+
+    __MACRO_SCOUT_HOME__ and __VENV_BIN__ are placeholders that
+    scripts/install-launchd.sh substitutes with the user's actual paths.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>__VENV_BIN__/macro-scout poke --fresh --lookback 24h > "__MACRO_SCOUT_HOME__/data/morning-brief-$(date +%Y%m%d).md" 2>&1</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__MACRO_SCOUT_HOME__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__VENV_BIN__:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Weekday</key><integer>1</integer> <!-- Mon -->
+      <key>Hour</key><integer>8</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>2</integer> <!-- Tue -->
+      <key>Hour</key><integer>8</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>3</integer> <!-- Wed -->
+      <key>Hour</key><integer>8</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>4</integer> <!-- Thu -->
+      <key>Hour</key><integer>8</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>5</integer> <!-- Fri -->
+      <key>Hour</key><integer>8</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__MACRO_SCOUT_HOME__/data/launchd-daily-brief.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__MACRO_SCOUT_HOME__/data/launchd-daily-brief.err.log</string>
+</dict>
+</plist>

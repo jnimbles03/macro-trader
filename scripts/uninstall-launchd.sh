@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEST="$HOME/Library/LaunchAgents/com.macroscout.ingest.plist"
-if [ ! -f "$DEST" ]; then
-  echo "Not installed: $DEST"
-  exit 0
-fi
+LA_DIR="$HOME/Library/LaunchAgents"
 
-launchctl unload "$DEST" 2>/dev/null || true
-rm -f "$DEST"
-echo "Removed: $DEST"
+uninstall_plist() {
+  local label="$1"
+  local dest="$LA_DIR/${label}.plist"
+  if [ ! -f "$dest" ]; then
+    echo "Not installed: $dest"
+    return
+  fi
+  launchctl unload "$dest" 2>/dev/null || true
+  rm -f "$dest"
+  echo "Removed: $dest"
+}
+
+uninstall_plist "com.macroscout.ingest"
+uninstall_plist "com.macroscout.daily-brief"

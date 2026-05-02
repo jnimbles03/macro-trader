@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Install the macro-scout ingest launchd job.
+# Install macro-scout launchd jobs.
 #
 #   ./scripts/install-launchd.sh
 #
-# Substitutes the working dir + venv path into the plist template and copies
-# it into ~/Library/LaunchAgents/, then loads it.
+# Installs two jobs:
+#   1. com.macroscout.ingest      — every 15 min, ingest-all + chains
+#   2. com.macroscout.daily-brief — 8am ET weekdays, full poke -> morning-brief-YYYYMMDD.md
 
 set -euo pipefail
 
@@ -21,21 +22,29 @@ mkdir -p "$REPO_ROOT/data"
 
 LA_DIR="$HOME/Library/LaunchAgents"
 mkdir -p "$LA_DIR"
-DEST="$LA_DIR/com.macroscout.ingest.plist"
 
-sed \
-  -e "s|__MACRO_SCOUT_HOME__|$REPO_ROOT|g" \
-  -e "s|__VENV_BIN__|$VENV_BIN|g" \
-  "$REPO_ROOT/scripts/com.macroscout.ingest.plist" > "$DEST"
+install_plist() {
+  local label="$1"
+  local src="$REPO_ROOT/scripts/${label}.plist"
+  local dest="$LA_DIR/${label}.plist"
 
-# Reload if already loaded.
-launchctl unload "$DEST" 2>/dev/null || true
-launchctl load "$DEST"
+  sed \
+    -e "s|__MACRO_SCOUT_HOME__|$REPO_ROOT|g" \
+    -e "s|__VENV_BIN__|$VENV_BIN|g" \
+    "$src" > "$dest"
 
-echo "Installed: $DEST"
-echo "Logs:"
-echo "  $REPO_ROOT/data/launchd-ingest.out.log"
-echo "  $REPO_ROOT/data/launchd-ingest.err.log"
+  launchctl unload "$dest" 2>/dev/null || true
+  launchctl load "$dest"
+  echo "Installed: $dest"
+}
+
+install_plist "com.macroscout.ingest"
+install_plist "com.macroscout.daily-brief"
+
 echo
-echo "Verify: launchctl list | grep com.macroscout.ingest"
+echo "Logs:"
+echo "  $REPO_ROOT/data/launchd-ingest.{out,err}.log"
+echo "  $REPO_ROOT/data/launchd-daily-brief.{out,err}.log"
+echo
+echo "Verify: launchctl list | grep com.macroscout"
 echo "Uninstall: ./scripts/uninstall-launchd.sh"
