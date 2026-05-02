@@ -25,9 +25,22 @@ def _safe_price(v: Any) -> float | None:
         return None
     return f
 
+from app.analysis.option_pricing import black76, implied_vol
 from app.config import get_settings
 from app.models.option_contract import OptionChain, OptionContract, OptionType
 from app.storage.repository import upsert_chain
+
+
+def _greeks_complete(g: Any) -> bool:
+    if g is None:
+        return False
+    for k in ("impliedVol", "delta", "gamma", "theta", "vega"):
+        v = getattr(g, k, None)
+        if v is None:
+            return False
+        if isinstance(v, float) and math.isnan(v):
+            return False
+    return True
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +107,11 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
     try:
         ib.connect(s.ibkr_host, s.ibkr_port, clientId=s.ibkr_client_id,
                    readonly=True, timeout=15)
-        log.info("[%s] connected", root)
+        # Type 3 = delayed (15min). Returns live data when the account has
+        # the subscription; falls back to delayed otherwise. Without this,
+        # accounts lacking real-time get -1 / NaN for everything.
+        ib.reqMarketDataType(3)
+        log.info("[%s] connected (market data type=delayed; live used if subscribed)", root)
 
         # Underlying future for the mark.
         log.info("[%s] resolving futures contract on exchange=%s", root, meta["exchange"])
@@ -227,37 +244,64 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
         ib.sleep(3.0)
 
         contracts: list[OptionContract] = []
-        dropped_no_greeks = 0
         dropped_no_quote = 0
+        dropped_no_greeks_no_compute = 0
         dropped_validation = 0
+        computed_greeks = 0
         now_utc = datetime.now(tz=timezone.utc)
+        today = now_utc.date()
+        T_years = max((expiration_d - today).days / 365.25, 1.0 / 365.25)
+
         for contract, t in zip(option_contracts, tickers):
-            greeks = t.modelGreeks
-            if greeks is None or any(getattr(greeks, k, None) is None
-                                     for k in ("impliedVol", "delta", "gamma", "theta", "vega")):
-                dropped_no_greeks += 1
-                continue
-            bid = t.bid if t.bid is not None and t.bid > 0 else None
-            ask = t.ask if t.ask is not None and t.ask > 0 else None
+            bid = _safe_price(t.bid)
+            ask = _safe_price(t.ask)
             if bid is None or ask is None:
                 dropped_no_quote += 1
                 continue
+            last = _safe_price(t.last)
+            mid = (bid + ask) / 2.0
+            ot = OptionType(contract.right)
+
+            greeks = t.modelGreeks
+            if _greeks_complete(greeks):
+                iv = float(greeks.impliedVol)
+                delta = float(greeks.delta)
+                gamma = float(greeks.gamma)
+                theta = float(greeks.theta)
+                vega = float(greeks.vega)
+            else:
+                # Compute Greeks ourselves via Black-76 from the mid price.
+                try:
+                    iv = implied_vol(
+                        F=float(underlying_price), K=float(contract.strike),
+                        market_price=mid, T=T_years, r=0.05, option_type=ot,
+                    )
+                    b76 = black76(
+                        F=float(underlying_price), K=float(contract.strike),
+                        sigma=iv, T=T_years, r=0.05, option_type=ot,
+                    )
+                    delta = b76.delta
+                    gamma = b76.gamma
+                    theta = b76.theta / 365.0   # per-day (matches OptionContract convention)
+                    vega = b76.vega / 100.0     # per 1% point of vol
+                    computed_greeks += 1
+                except Exception as e:
+                    log.debug("[%s] Black-76 compute failed for %s%s mid=%s: %s",
+                              root, contract.strike, contract.right, mid, e)
+                    dropped_no_greeks_no_compute += 1
+                    continue
+
             try:
                 contracts.append(OptionContract(
                     root=root,
                     underlying_symbol=underlying_symbol,
                     underlying_price=float(underlying_price),
-                    option_type=OptionType(contract.right),
+                    option_type=ot,
                     strike=float(contract.strike),
                     expiration=expiration_d,
                     multiplier=meta["multiplier"],
-                    bid=float(bid), ask=float(ask),
-                    last=float(t.last) if t.last else None,
-                    iv=float(greeks.impliedVol),
-                    delta=float(greeks.delta),
-                    gamma=float(greeks.gamma),
-                    theta=float(greeks.theta),
-                    vega=float(greeks.vega),
+                    bid=bid, ask=ask, last=last,
+                    iv=iv, delta=delta, gamma=gamma, theta=theta, vega=vega,
                     volume=int(t.volume) if t.volume else 0,
                     open_interest=0,  # IBKR exposes OI on a separate tick type; v1 leaves at 0
                     quote_time=now_utc,
@@ -268,8 +312,10 @@ def _fetch_chain(s, root: str, meta: dict, expiration: str | None,
                           root, contract.strike, contract.right, e)
                 continue
 
-        log.info("[%s] kept %d contracts | dropped: no_greeks=%d no_quote=%d validation=%d",
-                 root, len(contracts), dropped_no_greeks, dropped_no_quote, dropped_validation)
+        log.info("[%s] kept %d contracts | computed_greeks=%d | "
+                 "dropped: no_quote=%d compute_failed=%d validation=%d",
+                 root, len(contracts), computed_greeks,
+                 dropped_no_quote, dropped_no_greeks_no_compute, dropped_validation)
 
         if not contracts:
             log.warning("[%s] IBKR returned no usable contracts — likely missing OPRA/CME "
