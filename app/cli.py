@@ -307,6 +307,37 @@ def data_status():
     console.print(sizes)
 
 
+@app.command("ibkr-status")
+def ibkr_status(
+    roots: str = typer.Option("ZN,ES,CL,GC,NQ,SI",
+                               help="Comma-separated roots to probe"),
+):
+    """Probe IBKR for which products you have live data on (vs delayed / missing).
+
+    IB Gateway must be running and logged in. This connects, requests a
+    sample tick for each root's underlying + ATM option, and reports what
+    came back. Use this to see which CME / NYMEX / COMEX subscriptions
+    are active without leaving the terminal.
+    """
+    from app.ingest.ibkr_status import explain, probe
+
+    root_list = [r.strip().upper() for r in roots.split(",") if r.strip()]
+    results = probe(root_list)
+
+    table = Table(title="IBKR market data status")
+    table.add_column("root")
+    table.add_column("underlying")
+    table.add_column("options")
+    table.add_column("notes", overflow="fold")
+    for r in results:
+        und = r.underlying_status
+        if r.underlying_price is not None:
+            und = f"{r.underlying_status} ({r.underlying_price:.4f})"
+        table.add_row(r.root, und, r.options_status, r.notes or "")
+    console.print(table)
+    console.print(explain(results))
+
+
 # --------------------------------------------------------------------------
 def _parse_hours(s: str) -> int:
     s = s.strip().lower()
