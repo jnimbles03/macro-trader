@@ -5,7 +5,7 @@ import { TradeCard } from "./components/TradeCard";
 import { TradeDrawer } from "./components/TradeDrawer";
 import { RegimePanel } from "./components/RegimePanel";
 import { Clusters } from "./components/Clusters";
-import { IndexPanel } from "./components/IndexPanel";
+import { MarketsPanel } from "./components/MarketsPanel";
 
 interface ControlsState {
   lookback: number;
@@ -154,7 +154,7 @@ export function App() {
                 <span className="pill">{fmtRelativeTime(brief.generated_at)}</span>
               </div>
             </div>
-            <IndexPanel />
+            <MarketsPanel />
           </div>
 
           <div className="trade-grid">
