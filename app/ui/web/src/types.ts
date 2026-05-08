@@ -80,6 +80,7 @@ export interface Insight {
   text: string;
   channel: string;
   cluster_name: string;
+  etf_label: string | null;
 }
 
 export interface Cluster {
@@ -134,6 +135,7 @@ export interface IndexQuote {
   change: number | null;
   change_pct: number | null;
   currency: string | null;
+  change_2d_pct?: number | null;
   error?: string | null;
 }
 

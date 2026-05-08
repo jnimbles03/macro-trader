@@ -87,6 +87,33 @@ def _slot_to_dict(slot) -> dict[str, Any]:
     }
 
 
+# Channel -> single most-impacted ETF in the markets-panel set.
+# Picks the cleanest ETF expression of each macro channel so the hero
+# bullet can show "Lagarde hawkish — TLT -1.2% (2d)" at a glance.
+_CHANNEL_ETF: dict[str, str] = {
+    "monetary_policy": "TLT",
+    "central_bank_communication": "TLT",
+    "treasury_issuance": "TLT",
+    "inflation": "TLT",
+    "labor_growth": "SPY",
+    "credit_stress": "HYG",
+    "banking_liquidity": "HYG",
+    "geopolitical_risk": "VIX",
+    "energy_commodities": "EEM",       # no oil ETF in the panel; EM is the
+                                        # next-best single-ETF proxy for an
+                                        # OPEC / oil-supply catalyst
+    "china": "FXI",
+    "europe": "DAX",
+    "japan": "EEM",
+    "elections_regulation": "SPY",
+    "tariffs_sanctions": "FXI",
+    "market_plumbing_volatility": "VIX",
+    "positioning": "SPY",
+    "fiscal": "TLT",
+    "other": "SPY",
+}
+
+
 def _impact_tier(score: float) -> str:
     """Bucket cluster composite score into a t-shirt size.
 
@@ -150,6 +177,7 @@ def brief_to_dict(brief: TradeBrief) -> dict[str, Any]:
             "text": _insight_line(c),
             "channel": c.channel,
             "cluster_name": c.name,
+            "etf_label": _CHANNEL_ETF.get(c.channel),
         }
         for c in ranked_clusters
     ]

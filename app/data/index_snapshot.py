@@ -48,6 +48,7 @@ class IndexQuote:
     change: float | None
     change_pct: float | None
     currency: str | None
+    change_2d_pct: float | None = None   # cumulative return over the last 2 trading days
     error: str | None = None
 
 
@@ -192,13 +193,36 @@ def _fetch_all() -> list[IndexQuote]:
             if asked > 0 and ready >= asked:
                 break
 
+        # Pull 3 trading days of dailies per contract for the 2d return.
+        # Sequential because reqHistoricalData is throttled per contract; the
+        # 30s panel cache means we only pay this once per refresh cycle.
+        history_2d: dict[str, float | None] = {}
+        for label, _kind, _ccy, c in contracts:
+            history_2d[label] = None
+            if c is None or not getattr(c, "conId", 0):
+                continue
+            try:
+                bars = ib.reqHistoricalData(
+                    c, endDateTime="", durationStr="3 D",
+                    barSizeSetting="1 day", whatToShow="TRADES",
+                    useRTH=True, formatDate=2, keepUpToDate=False,
+                )
+                closes = [b.close for b in bars if getattr(b, "close", None)]
+                if len(closes) >= 3:
+                    two_days_ago = closes[-3]
+                    today = closes[-1]
+                    if two_days_ago and today:
+                        history_2d[label] = (today / two_days_ago) - 1.0
+            except Exception as e:
+                log.debug("reqHistoricalData failed for %s: %s", label, e)
+
         out: list[IndexQuote] = []
         for label, kind, ccy, c in contracts:
             t = tickers.get(label)
             if c is None or t is None:
                 out.append(IndexQuote(label=label, kind=kind, last=None, prev_close=None,
                                       change=None, change_pct=None, currency=ccy,
-                                      error="not resolved"))
+                                      change_2d_pct=None, error="not resolved"))
                 continue
             last = (
                 _safe_price(t.last)
@@ -209,7 +233,8 @@ def _fetch_all() -> list[IndexQuote]:
             change = (last - prev) if (last is not None and prev is not None and last != prev) else None
             change_pct = (change / prev) if (change is not None and prev) else None
             out.append(IndexQuote(label=label, kind=kind, last=last, prev_close=prev,
-                                  change=change, change_pct=change_pct, currency=ccy))
+                                  change=change, change_pct=change_pct, currency=ccy,
+                                  change_2d_pct=history_2d.get(label)))
         return out
     finally:
         try:
@@ -220,31 +245,35 @@ def _fetch_all() -> list[IndexQuote]:
 
 def get_mock_snapshot() -> dict[str, Any]:
     """Synthetic data so the UI is functional without a live gateway."""
+    # (label, kind, last, today_pct, prior_pct)
     seed = [
-        ("SPY", "stock", 567.42, 0.0042),
-        ("DIA", "stock", 412.18, 0.0028),
-        ("QQQ", "stock", 489.05, 0.0061),
-        ("BND", "stock", 73.21, -0.0015),
-        ("HYG", "stock", 79.84, 0.0008),
-        ("SHY", "stock", 82.30, 0.0002),
-        ("TLT", "stock", 92.55, -0.0073),
-        ("MUB", "stock", 107.12, -0.0011),
-        ("EEM", "stock", 43.91, -0.0044),
-        ("FXI", "stock", 30.07, -0.0102),
-        ("ZN",  "future", 110.85, -0.0019),
-        ("ZB",  "future", 116.40, -0.0036),
-        ("VIX", "index", 14.32, 0.0218),
-        ("FTSE", "index", 8245.10, 0.0015),
-        ("DAX", "index", 18540.60, -0.0034),
+        ("SPY", "stock", 567.42, 0.0042, -0.0028),
+        ("DIA", "stock", 412.18, 0.0028, -0.0014),
+        ("QQQ", "stock", 489.05, 0.0061, -0.0042),
+        ("BND", "stock", 73.21, -0.0015, -0.0023),
+        ("HYG", "stock", 79.84, 0.0008, -0.0019),
+        ("SHY", "stock", 82.30, 0.0002, 0.0001),
+        ("TLT", "stock", 92.55, -0.0073, -0.0094),
+        ("MUB", "stock", 107.12, -0.0011, -0.0022),
+        ("EEM", "stock", 43.91, -0.0044, -0.0061),
+        ("FXI", "stock", 30.07, -0.0102, -0.0145),
+        ("ZN",  "future", 110.85, -0.0019, -0.0034),
+        ("ZB",  "future", 116.40, -0.0036, -0.0058),
+        ("VIX", "index", 14.32, 0.0218, 0.0312),
+        ("FTSE", "index", 8245.10, 0.0015, -0.0008),
+        ("DAX", "index", 18540.60, -0.0034, -0.0021),
     ]
     quotes = []
-    for label, kind, last, pct in seed:
+    for label, kind, last, pct, prior_pct in seed:
         prev = last / (1 + pct)
         change = last - prev
+        # 2d cumulative compounding (1+today)*(1+prior) - 1
+        change_2d = (1 + pct) * (1 + prior_pct) - 1
         ccy = {"FTSE": "GBP", "DAX": "EUR"}.get(label, "USD")
         quotes.append(asdict(IndexQuote(
             label=label, kind=kind, last=last, prev_close=prev,
             change=change, change_pct=pct, currency=ccy,
+            change_2d_pct=change_2d,
         )))
     return {
         "quotes": quotes,

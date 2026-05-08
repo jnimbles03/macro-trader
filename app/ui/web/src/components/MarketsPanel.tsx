@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import type { IndexQuote, SnapshotPayload } from "../types";
-
-const REFRESH_MS = 30_000;
+import { useMemo } from "react";
+import type { IndexQuote } from "../types";
+import { useSnapshot } from "../useSnapshot";
 
 interface Bucket {
   name: string;
@@ -39,29 +38,8 @@ const trendClass = (n: number | null | undefined): string => {
 };
 
 export function MarketsPanel() {
-  const [snap, setSnap] = useState<SnapshotPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/snapshot");
-        const json: SnapshotPayload = await res.json();
-        if (!cancelled) setSnap(json);
-      } catch {
-        // keep last data
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    const id = setInterval(load, REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  const snap = useSnapshot();
+  const loading = !snap;
 
   const quotes = useMemo(() => {
     const m = new Map<string, IndexQuote>();

@@ -327,15 +327,42 @@ button {
 }
 .insight {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   gap: 16px;
-  align-items: start;
+  align-items: center;
   padding: 14px 18px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   position: relative;
   overflow: hidden;
+}
+.insight-etf {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.insight-etf-label {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.insight-etf-pct {
+  font-size: 13px;
+}
+.insight-etf-period {
+  font-size: 10px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 .insight::before {
   content: "";
