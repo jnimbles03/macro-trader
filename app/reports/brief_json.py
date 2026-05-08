@@ -87,6 +87,38 @@ def _slot_to_dict(slot) -> dict[str, Any]:
     }
 
 
+def _impact_tier(score: float) -> str:
+    """Bucket cluster composite score into a t-shirt size.
+
+    `composite_score` is a 0..~0.7 weighted aggregate (relevance, surprise,
+    cross-asset impact, time sensitivity, vol potential, attenuated by
+    source credibility). Thresholds picked so the top of a typical brief
+    has 1-2 XL items, 2-3 L items, the rest M/S.
+    """
+    if score >= 0.55:
+        return "XL"
+    if score >= 0.40:
+        return "L"
+    if score >= 0.25:
+        return "M"
+    return "S"
+
+
+def _insight_line(cluster) -> str:
+    """One-line distillation of a cluster for the hero list.
+
+    Prefer the cluster summary (already authored by the headline classifier);
+    fall back to the highest-tier headline's title.
+    """
+    if cluster.summary:
+        first = cluster.summary.split(";")[0].strip().rstrip(".")
+        if first:
+            return first
+    if cluster.headlines:
+        return cluster.headlines[0].title
+    return cluster.name
+
+
 def brief_to_dict(brief: TradeBrief) -> dict[str, Any]:
     sel = brief.selector
     ranked_clusters = sorted(brief.clusters, key=lambda c: c.composite_score, reverse=True)[:5]
@@ -96,6 +128,7 @@ def brief_to_dict(brief: TradeBrief) -> dict[str, Any]:
             "channel": c.channel,
             "best_tier": c.best_tier.value,
             "composite_score": c.composite_score,
+            "impact": _impact_tier(c.composite_score),
             "summary": c.summary,
             "headlines": [
                 {
@@ -107,6 +140,16 @@ def brief_to_dict(brief: TradeBrief) -> dict[str, Any]:
                 }
                 for h in c.headlines[:8]
             ],
+        }
+        for c in ranked_clusters
+    ]
+    insights = [
+        {
+            "impact": _impact_tier(c.composite_score),
+            "score": round(c.composite_score, 4),
+            "text": _insight_line(c),
+            "channel": c.channel,
+            "cluster_name": c.name,
         }
         for c in ranked_clusters
     ]
@@ -135,6 +178,7 @@ def brief_to_dict(brief: TradeBrief) -> dict[str, Any]:
         "convergence": sel.convergence,
         "dissent": sel.dissent,
         "executive_read": sel.executive_read,
+        "insights": insights,
         "clusters": clusters,
         "signals": signals,
         "spread": _slot_to_dict(sel.spread),

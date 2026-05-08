@@ -72,11 +72,22 @@ export interface ClusterHeadline {
   published_at: string;
 }
 
+export type Impact = "S" | "M" | "L" | "XL";
+
+export interface Insight {
+  impact: Impact;
+  score: number;
+  text: string;
+  channel: string;
+  cluster_name: string;
+}
+
 export interface Cluster {
   name: string;
   channel: string;
   best_tier: string;
   composite_score: number;
+  impact: Impact;
   summary: string;
   headlines: ClusterHeadline[];
 }
@@ -103,6 +114,7 @@ export interface Brief {
   convergence: string[];
   dissent: string[];
   executive_read: string[];
+  insights: Insight[];
   clusters: Cluster[];
   signals: Signal[];
   spread: Slot;

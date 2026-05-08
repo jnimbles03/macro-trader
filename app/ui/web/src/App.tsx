@@ -6,6 +6,7 @@ import { TradeDrawer } from "./components/TradeDrawer";
 import { RegimePanel } from "./components/RegimePanel";
 import { Clusters } from "./components/Clusters";
 import { MarketsPanel } from "./components/MarketsPanel";
+import { Insights } from "./components/Insights";
 
 interface ControlsState {
   lookback: number;
@@ -136,11 +137,8 @@ export function App() {
                 <br />
                 in the next 24 hours.
               </h1>
-              <p className="hero-sub">
-                Two trade ideas — one defined-risk spread, one convex YOLO — built from a Grok
-                primary synthesis and an Opus adversarial review. Everything else on this page is
-                the evidence.
-              </p>
+
+              <Insights insights={brief.insights} />
 
               <div className="regime-row">
                 <span className={regimePillClass(brief.regime.regime)}>

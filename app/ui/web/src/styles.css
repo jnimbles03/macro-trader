@@ -313,6 +313,137 @@ button {
   text-transform: lowercase;
 }
 
+/* ---------- Insights bullets ---------- */
+.insights {
+  margin: 32px 0 36px;
+}
+.insight-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.insight {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 18px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+.insight::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+.insight-XL::before {
+  background: linear-gradient(180deg, var(--bear), var(--warn));
+}
+.insight-L::before {
+  background: var(--warn);
+}
+.insight-M::before {
+  background: var(--text-mute);
+}
+.insight-S::before {
+  background: var(--border-strong);
+}
+.insight-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.insight-channel {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.insight-line {
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.insight-XL .insight-line {
+  font-size: 18px;
+  font-weight: 500;
+}
+.insight-L .insight-line {
+  font-size: 16px;
+}
+.insight-M .insight-line,
+.insight-S .insight-line {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.impact-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 6px;
+  padding: 0 8px;
+  height: 26px;
+  min-width: 32px;
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.impact-XL {
+  background: rgba(248, 113, 113, 0.16);
+  color: var(--bear);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  height: 30px;
+  min-width: 38px;
+  font-size: 12px;
+}
+.impact-L {
+  background: rgba(251, 191, 36, 0.14);
+  color: var(--warn);
+  border: 1px solid rgba(251, 191, 36, 0.26);
+}
+.impact-M {
+  background: rgba(154, 163, 184, 0.10);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  height: 24px;
+}
+.impact-S {
+  background: transparent;
+  color: var(--text-mute);
+  border: 1px solid var(--border);
+  height: 22px;
+  min-width: 28px;
+  font-size: 10px;
+}
+
+.insight-toggle {
+  margin-top: 14px;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.insight-toggle:hover {
+  text-decoration: underline;
+}
+
 /* ---------- Hero (legacy single-column rules) ---------- */
 .hero-eyebrow {
   font-size: 12px;
