@@ -113,3 +113,23 @@ export interface Brief {
 }
 
 export type SlotKey = "spread" | "yolo";
+
+export interface IndexQuote {
+  label: string;
+  kind: "stock" | "future" | "index";
+  last: number | null;
+  prev_close: number | null;
+  change: number | null;
+  change_pct: number | null;
+  currency: string | null;
+  error?: string | null;
+}
+
+export interface SnapshotPayload {
+  quotes: IndexQuote[];
+  fetched_at: number;
+  stale: boolean;
+  gateway_error: string | null;
+  age_seconds: number;
+  mock?: boolean;
+}

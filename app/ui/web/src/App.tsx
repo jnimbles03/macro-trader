@@ -5,6 +5,7 @@ import { TradeCard } from "./components/TradeCard";
 import { TradeDrawer } from "./components/TradeDrawer";
 import { RegimePanel } from "./components/RegimePanel";
 import { Clusters } from "./components/Clusters";
+import { IndexPanel } from "./components/IndexPanel";
 
 interface ControlsState {
   lookback: number;
@@ -127,27 +128,33 @@ export function App() {
 
       {brief && (
         <>
-          <div className="hero-eyebrow">Today's brief</div>
-          <h1 className="hero-title">
-            What the macro tape is paying for
-            <br />
-            in the next 24 hours.
-          </h1>
-          <p className="hero-sub">
-            Two trade ideas — one defined-risk spread, one convex YOLO — built from a Grok primary
-            synthesis and an Opus adversarial review. Everything else on this page is the evidence.
-          </p>
+          <div className="hero">
+            <div className="hero-text">
+              <div className="hero-eyebrow">Today's brief</div>
+              <h1 className="hero-title">
+                What the macro tape is paying for
+                <br />
+                in the next 24 hours.
+              </h1>
+              <p className="hero-sub">
+                Two trade ideas — one defined-risk spread, one convex YOLO — built from a Grok
+                primary synthesis and an Opus adversarial review. Everything else on this page is
+                the evidence.
+              </p>
 
-          <div className="regime-row">
-            <span className={regimePillClass(brief.regime.regime)}>
-              <span className="dot" />
-              {regimeLabel(brief.regime.regime)}
-            </span>
-            <span className="pill">
-              <span className="dot" />
-              confidence {brief.regime.confidence.toFixed(2)}
-            </span>
-            <span className="pill">{fmtRelativeTime(brief.generated_at)}</span>
+              <div className="regime-row">
+                <span className={regimePillClass(brief.regime.regime)}>
+                  <span className="dot" />
+                  {regimeLabel(brief.regime.regime)}
+                </span>
+                <span className="pill">
+                  <span className="dot" />
+                  confidence {brief.regime.confidence.toFixed(2)}
+                </span>
+                <span className="pill">{fmtRelativeTime(brief.generated_at)}</span>
+              </div>
+            </div>
+            <IndexPanel />
           </div>
 
           <div className="trade-grid">

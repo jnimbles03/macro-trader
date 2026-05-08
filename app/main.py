@@ -9,6 +9,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.config import get_settings
+from app.data.index_snapshot import get_mock_snapshot, get_snapshot
 from app.reports.brief_json import brief_to_dict
 from app.reports.markdown_renderer import render_brief
 from app.reports.trade_report import generate_trade_brief
@@ -38,6 +40,18 @@ def api_brief(lookback: int = 24, market: str = "", fresh: bool = False) -> JSON
         fresh=bool(fresh),
     )
     return JSONResponse(brief_to_dict(brief))
+
+
+@app.get("/api/snapshot")
+def api_snapshot() -> JSONResponse:
+    """Index/macro ticker snapshots for the right-rail panel.
+
+    Falls back to synthetic data when MOCK_DATA=true so the UI is fully
+    interactive without a live IBKR gateway.
+    """
+    if get_settings().mock_data:
+        return JSONResponse(get_mock_snapshot())
+    return JSONResponse(get_snapshot())
 
 
 @app.get("/poke", response_class=HTMLResponse)
