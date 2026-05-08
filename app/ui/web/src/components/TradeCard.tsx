@@ -1,6 +1,8 @@
 import type { Slot, SlotKey } from "../types";
 import {
+  daysToExpiry,
   directionPillClass,
+  dteLabel,
   fmtRr,
   fmtUsd,
   structureLabel,
@@ -34,6 +36,9 @@ export function TradeCard({ slot, data, onLearnMore }: Props) {
     );
   }
 
+  const dte = daysToExpiry(trade.expiration);
+  const dteUrgent = dte <= 3;
+
   return (
     <article className="trade-card">
       <header className="trade-card-header">
@@ -50,7 +55,13 @@ export function TradeCard({ slot, data, onLearnMore }: Props) {
               {trade.root}
             </span>
             <span className="pill">{structureLabel(trade.structure)}</span>
-            <span className="pill">exp {trade.expiration}</span>
+            <span
+              className={`pill ${dteUrgent ? "warn" : ""}`}
+              title={`Holding window through expiration on ${trade.expiration}`}
+            >
+              <span className="dot" />
+              hold {dteLabel(dte)}
+            </span>
           </div>
         </div>
       </header>

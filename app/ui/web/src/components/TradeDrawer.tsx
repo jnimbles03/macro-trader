@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { Trade } from "../types";
-import { fmtNum, fmtPct, fmtRr, fmtUsd, structureLabel } from "../format";
+import { daysToExpiry, dteLabel, fmtNum, fmtPct, fmtRr, fmtUsd, structureLabel } from "../format";
 
 interface Props {
   trade: Trade;
@@ -33,6 +33,7 @@ export function TradeDrawer({ trade, onClose }: Props) {
             <div className="trade-meta">
               <span className="pill">{trade.root}</span>
               <span className="pill">exp {trade.expiration}</span>
+              <span className="pill">hold {dteLabel(daysToExpiry(trade.expiration))} max</span>
               <span className="pill">R/R {fmtRr(trade.rr_ratio)}</span>
               {trade.expected_move_pct != null && (
                 <span className="pill">expected move {fmtPct(trade.expected_move_pct)}</span>

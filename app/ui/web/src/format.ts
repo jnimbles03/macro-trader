@@ -65,3 +65,18 @@ export const fmtRelativeTime = (iso: string): string => {
   if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
   return `${Math.round(sec / 86400)}d ago`;
 };
+
+export const daysToExpiry = (expiration: string): number => {
+  // expiration is a YYYY-MM-DD string from the server. Use UTC midnights so
+  // local timezone doesn't shift the count.
+  const exp = new Date(`${expiration}T00:00:00Z`).getTime();
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  return Math.max(0, Math.round((exp - todayUtc) / 86400_000));
+};
+
+export const dteLabel = (days: number): string => {
+  if (days === 0) return "0d (today)";
+  if (days === 1) return "1d";
+  return `${days}d`;
+};
