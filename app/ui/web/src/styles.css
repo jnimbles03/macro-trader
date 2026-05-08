@@ -59,9 +59,9 @@ button {
 
 /* ---------- Layout ---------- */
 .shell {
-  max-width: 1200px;
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 32px 32px 96px;
+  padding: 32px 40px 96px;
 }
 
 .topbar {
@@ -145,8 +145,8 @@ button {
 /* ---------- Hero 2-column ---------- */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 56px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 64px;
   align-items: start;
   margin-bottom: 56px;
 }

@@ -240,6 +240,9 @@ def ingest_fred(
 def ingest_chains(
     roots: str = typer.Option("ZN,ES", help="Comma-separated roots, e.g. ZN,ES,CL"),
     expiration: Optional[str] = typer.Option(None, help="Specific expiration YYYY-MM-DD (default: front-month)"),
+    num_strikes: int = typer.Option(81, "--num-strikes",
+                                     help="Strikes to pull around ATM (calls + puts each). "
+                                          "Wider catches deep-ITM proposals."),
 ):
     """Snapshot option chains from IBKR for the given roots."""
     init_schema()
@@ -250,6 +253,7 @@ def ingest_chains(
     for r in [x.strip().upper() for x in roots.split(",") if x.strip()]:
         results.append(run_one(
             f"ibkr:{r}", ibkr_chain.ingest, root=r, expiration=expiration,
+            num_strikes=num_strikes,
         ))
     _print_ingest_table(results)
 
