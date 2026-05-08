@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
+import socket
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -120,10 +121,24 @@ def get_snapshot() -> dict[str, Any]:
         return payload
 
 
+def _probe_gateway(host: str, port: int, timeout: float = 1.0) -> bool:
+    """Cheap TCP probe so we can fail fast when the gateway isn't running."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, TimeoutError):
+        return False
+
+
 def _fetch_all() -> list[IndexQuote]:
     s = get_settings()
-    if not s.ibkr_enabled:
-        raise RuntimeError("IBKR_ENABLED=false")
+    # Snapshot is read-only and idempotent — auto-detect rather than gate on
+    # IBKR_ENABLED (which the chain ingest still respects, since that writes
+    # to the warehouse). If the gateway is reachable, use it.
+    if not _probe_gateway(s.ibkr_host, s.ibkr_port):
+        raise RuntimeError(
+            f"IB Gateway not reachable at {s.ibkr_host}:{s.ibkr_port}"
+        )
 
     from ib_async import IB, Future, Index, Stock
 
