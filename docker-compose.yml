@@ -1,0 +1,31 @@
+# Run the SPA + FastAPI in one container, talk to IB Gateway running natively
+# on the host. Lifecycle:
+#   docker compose up -d --build      # build + start in background
+#   docker compose stop               # pause (keeps the container, fast restart)
+#   docker compose start              # resume
+#   docker compose logs -f            # tail logs
+#   docker compose down               # remove the container
+services:
+  scout:
+    build: .
+    image: macro-scout:latest
+    container_name: macro-scout
+    ports:
+      # Expose the SPA only on localhost; pick a host port.
+      - "127.0.0.1:8001:8000"
+    environment:
+      # IB Gateway runs natively on the Mac; the container reaches it via the
+      # docker host gateway. Override IBKR_PORT in .env if you use a different
+      # one (TWS live=7496, TWS paper=7497, IB Gateway live=4001, paper=4002).
+      IBKR_HOST: host.docker.internal
+      IBKR_PORT: ${IBKR_PORT:-7497}
+      IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-12}
+      MOCK_DATA: ${MOCK_DATA:-false}
+    env_file:
+      # Optional — falls back silently if absent.
+      - path: .env
+        required: false
+    extra_hosts:
+      # Linux compat; Docker Desktop on macOS resolves this name natively.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

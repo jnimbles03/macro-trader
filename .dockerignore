@@ -1,0 +1,26 @@
+.git
+.gitignore
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.log
+
+# SPA artifacts — Dockerfile rebuilds them.
+app/ui/web/node_modules
+app/ui/web/dist
+app/ui/web/*.tsbuildinfo
+
+# Local secrets — pass via env_file in compose, not the image.
+.env
+.env.*
+!.env.example
+
+# Docs, IDE, OS junk.
+.DS_Store
+.idea
+.vscode
+*.swp
