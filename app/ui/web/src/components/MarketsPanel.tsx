@@ -12,8 +12,8 @@ const BUCKETS: Bucket[] = [
   { name: "Treasuries", labels: ["SHY", "BND", "TLT", "MUB"] },
   { name: "Credit", labels: ["HYG"] },
   { name: "Rates futures", labels: ["ZN", "ZB"] },
-  { name: "Volatility", labels: ["VIX"] },
-  { name: "Global equity", labels: ["EEM", "FXI", "FTSE", "DAX"] },
+  { name: "Volatility", labels: ["VIXY"] },
+  { name: "Global equity", labels: ["EEM", "FXI", "EWU", "EWG"] },
 ];
 
 const fmtPct = (n: number | null): string => {

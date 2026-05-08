@@ -69,9 +69,9 @@ _INSTRUMENTS: list[tuple[str, str, dict[str, Any]]] = [
     ("FXI", "stock", {"symbol": "FXI", "exchange": "SMART", "currency": "USD"}),
     ("ZN",  "future", {"symbol": "ZN", "exchange": "CBOT"}),
     ("ZB",  "future", {"symbol": "ZB", "exchange": "CBOT"}),
-    ("VIX", "index",  {"symbol": "VIX", "exchange": "CBOE", "currency": "USD"}),
-    ("FTSE", "index", {"symbol": "UKX", "exchange": "LIFFE", "currency": "GBP"}),
-    ("DAX", "index",  {"symbol": "DAX", "exchange": "EUREX", "currency": "EUR"}),
+    ("VIXY", "stock", {"symbol": "VIXY", "exchange": "SMART", "currency": "USD"}),
+    ("EWU", "stock",  {"symbol": "EWU", "exchange": "SMART", "currency": "USD"}),
+    ("EWG", "stock",  {"symbol": "EWG", "exchange": "SMART", "currency": "USD"}),
 ]
 
 
@@ -274,9 +274,9 @@ def get_mock_snapshot() -> dict[str, Any]:
         ("FXI", "stock", 30.07, -0.0102, -0.0145),
         ("ZN",  "future", 110.85, -0.0019, -0.0034),
         ("ZB",  "future", 116.40, -0.0036, -0.0058),
-        ("VIX", "index", 14.32, 0.0218, 0.0312),
-        ("FTSE", "index", 8245.10, 0.0015, -0.0008),
-        ("DAX", "index", 18540.60, -0.0034, -0.0021),
+        ("VIXY", "stock", 38.92, 0.0184, 0.0271),
+        ("EWU", "stock", 38.45, 0.0011, -0.0008),
+        ("EWG", "stock", 36.07, -0.0028, -0.0019),
     ]
     quotes = []
     for label, kind, last, pct, prior_pct in seed:
@@ -284,7 +284,7 @@ def get_mock_snapshot() -> dict[str, Any]:
         change = last - prev
         # 2d cumulative compounding (1+today)*(1+prior) - 1
         change_2d = (1 + pct) * (1 + prior_pct) - 1
-        ccy = {"FTSE": "GBP", "DAX": "EUR"}.get(label, "USD")
+        ccy = "USD"
         quotes.append(asdict(IndexQuote(
             label=label, kind=kind, last=last, prev_close=prev,
             change=change, change_pct=pct, currency=ccy,

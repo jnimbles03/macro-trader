@@ -98,16 +98,16 @@ _CHANNEL_ETF: dict[str, str] = {
     "labor_growth": "SPY",
     "credit_stress": "HYG",
     "banking_liquidity": "HYG",
-    "geopolitical_risk": "VIX",
+    "geopolitical_risk": "VIXY",
     "energy_commodities": "EEM",       # no oil ETF in the panel; EM is the
                                         # next-best single-ETF proxy for an
                                         # OPEC / oil-supply catalyst
     "china": "FXI",
-    "europe": "DAX",
+    "europe": "EWG",
     "japan": "EEM",
     "elections_regulation": "SPY",
     "tariffs_sanctions": "FXI",
-    "market_plumbing_volatility": "VIX",
+    "market_plumbing_volatility": "VIXY",
     "positioning": "SPY",
     "fiscal": "TLT",
     "other": "SPY",
