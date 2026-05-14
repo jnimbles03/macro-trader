@@ -1,0 +1,19 @@
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Data files
+data/*.db
+data/*.log
+data/*.tmp
+
+# Temp files
+*.tmp
+new_test_file.txt
+test_write.tmp
+
+# Mac
+.DS_Store
