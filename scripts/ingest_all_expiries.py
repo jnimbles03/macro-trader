@@ -31,7 +31,7 @@ def get_all_expirations(root: str) -> list[str]:
     root_upper = root.upper()
     ib = IB()
     try:
-        ib.connect(s.ibkr_host, s.ibkr_port, clientId=s.ibkr_client_id + 2, readonly=True, timeout=15)
+        ib.connect(s.ibkr_host, s.ibkr_port, clientId=s.ibkr_client_id + 3, readonly=True, timeout=15)
         underlying = Stock(root_upper, "SMART", "USD")
         ib.qualifyContracts(underlying)
 
