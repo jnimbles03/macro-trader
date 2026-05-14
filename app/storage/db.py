@@ -1,10 +1,4 @@
-"""Database engine — SQLite for dev, Postgres/TimescaleDB for prod.
-
-Priority:
-1. DB_URL environment variable (set in docker-compose)
-2. db_url setting from .env file (pydantic-settings)
-3. db_path SQLite fallback
-"""
+"""Database engine helper — supports SQLite (dev) and Postgres (prod)."""
 
 from __future__ import annotations
 
@@ -18,17 +12,13 @@ from app.config import REPO_ROOT, get_settings
 
 
 def _engine_url() -> str:
-    # 1. Direct env var (docker-compose sets this)
-    db_url = os.environ.get("DB_URL", "")
-    if db_url:
+    # Postgres takes priority if DB_URL is set and looks like postgres
+    db_url = os.getenv("DB_URL", "") or os.getenv("DATABASE_URL", "")
+    if db_url.startswith("postgresql") or db_url.startswith("postgres"):
         return db_url
 
-    # 2. Pydantic settings (from .env file)
+    # Fall back to SQLite path from settings
     s = get_settings()
-    if s.db_url:
-        return s.db_url
-
-    # 3. SQLite fallback
     p = s.db_path
     if not p.startswith("sqlite"):
         path = Path(p)
@@ -39,18 +29,12 @@ def _engine_url() -> str:
     return p
 
 
-def _redis_url() -> str:
-    url = os.environ.get("REDIS_URL", "")
-    if url:
-        return url
-    return get_settings().redis_url
-
-
 def make_engine():
     url = _engine_url()
-    if url.startswith("postgresql"):
-        return create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=10, future=True)
-    return create_engine(url, future=True)
+    if url.startswith("sqlite"):
+        return create_engine(url, future=True)
+    # Postgres — use psycopg2, pool_pre_ping for reconnect resilience
+    return create_engine(url, future=True, pool_pre_ping=True)
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, future=True, bind=make_engine())

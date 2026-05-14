@@ -186,7 +186,7 @@ def chain(ticker: str, expiry: str) -> JSONResponse:
                 chain_row = conn.execute(text("""
                     SELECT id, root, expiration, underlying_price, quote_time
                     FROM option_chains
-                    WHERE root = :t AND expiration >= date('now')
+                    WHERE root = :t AND expiration >= CURRENT_DATE::text
                     ORDER BY expiration ASC, quote_time DESC LIMIT 1
                 """), {"t": ticker}).fetchone()
             else:
