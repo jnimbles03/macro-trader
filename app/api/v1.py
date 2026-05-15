@@ -22,7 +22,7 @@ from sqlalchemy import text
 
 from app.storage.db import make_engine
 
-router = APIRouter(prefix="/api/v1", tags=["market-data-v1"])
+router = APIRouter(tags=["market-data-v1"])
 
 # Redis connection (optional — gracefully degrades if unavailable)
 def _redis_client():
